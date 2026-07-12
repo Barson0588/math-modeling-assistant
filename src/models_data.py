@@ -9,6 +9,7 @@ MODELS = [
         "python_libs": "sklearn.linear_model.LinearRegression, statsmodels.api.OLS",
         "mcm_type": ["A", "B", "C", "D", "E", "F"],
         "difficulty": "入门",
+        "code_example": "from sklearn.linear_model import LinearRegression\nimport numpy as np\n\n# 模拟数据: y = 2*x1 + 3*x2 + 噪声\nX = np.random.randn(100, 2)\ny = 2 * X[:, 0] + 3 * X[:, 1] + np.random.randn(100) * 0.5\n\nmodel = LinearRegression().fit(X, y)\nprint(f\"系数: {model.coef_}, 截距: {model.intercept_:.2f}\")\nprint(f\"R²: {model.score(X, y):.3f}\")\n\n# 预测新数据\ny_pred = model.predict([[1.5, -0.5]])\nprint(f\"预测值: {y_pred[0]:.2f}\")",
     },
     {
         "category": "预测",
@@ -19,6 +20,7 @@ MODELS = [
         "python_libs": "statsmodels.tsa.arima.model.ARIMA, pmdarima.auto_arima",
         "mcm_type": ["C", "E"],
         "difficulty": "中等",
+        "code_example": "import numpy as np\nfrom statsmodels.tsa.arima.model import ARIMA\n\n# 模拟时间序列数据 (带趋势 + 噪声)\nt = np.arange(100)\ny = 0.5 * t + 2 * np.sin(t / 10) + np.random.randn(100) * 3\n\n# 拟合 ARIMA(2,1,2) 模型\nmodel = ARIMA(y, order=(2, 1, 2))\nfitted = model.fit()\nprint(fitted.summary())\n\n# 预测未来 10 步\nforecast = fitted.forecast(steps=10)\nprint(f\"未来10期预测: {forecast}\")",
     },
     {
         "category": "预测",
@@ -29,6 +31,7 @@ MODELS = [
         "python_libs": "numpy (自行实现), greytheory 库",
         "mcm_type": ["A", "E"],
         "difficulty": "简单",
+        "code_example": "import numpy as np\n\ndef gm11(x0):\n    \"\"\"灰色预测 GM(1,1) 模型\"\"\"\n    x1 = np.cumsum(x0)  # 一次累加\n    z1 = (x1[:-1] + x1[1:]) / 2  # 紧邻均值\n    B = np.column_stack([-z1, np.ones_like(z1)])\n    Y = x0[1:]\n    a, b = np.linalg.lstsq(B, Y, rcond=None)[0]  # 最小二乘求参数\n    def predict(k):\n        return (x0[0] - b / a) * (1 - np.exp(a)) * np.exp(-a * k)\n    return predict\n\n# 示例: 只有 6 个数据点\nx0 = np.array([132, 155, 173, 195, 222, 248])\nf = gm11(x0)\nprint(f\"第7期预测: {f(6):.1f}\")",
     },
     {
         "category": "预测",
@@ -39,6 +42,7 @@ MODELS = [
         "python_libs": "sklearn.neural_network.MLPRegressor, tensorflow.keras",
         "mcm_type": ["A", "C", "D", "E"],
         "difficulty": "中等",
+        "code_example": "from sklearn.neural_network import MLPRegressor\nfrom sklearn.preprocessing import StandardScaler\nimport numpy as np\n\nX = np.random.randn(500, 5)\ny = 3 * X[:, 0]**2 + np.sin(X[:, 1]) + np.random.randn(500) * 0.1\n\nscaler = StandardScaler()\nX_scaled = scaler.fit_transform(X)\n\nmodel = MLPRegressor(hidden_layer_sizes=(64, 32), max_iter=500, random_state=42)\nmodel.fit(X_scaled, y)\nprint(f\"训练 R²: {model.score(X_scaled, y):.3f}\")",
     },
     {
         "category": "预测",
@@ -49,6 +53,7 @@ MODELS = [
         "python_libs": "xgboost.XGBRegressor, xgboost.XGBClassifier",
         "mcm_type": ["C"],
         "difficulty": "中等",
+        "code_example": "from xgboost import XGBRegressor\nfrom sklearn.model_selection import train_test_split\nimport numpy as np\n\nX = np.random.randn(1000, 8)\ny = X[:, 0]**2 + X[:, 1] * X[:, 2] + np.random.randn(1000) * 0.5\n\nX_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)\n\nmodel = XGBRegressor(n_estimators=100, max_depth=4, learning_rate=0.1, random_state=42)\nmodel.fit(X_train, y_train)\nprint(f\"测试 R²: {model.score(X_test, y_test):.3f}\")\nprint(f\"Top-3 特征重要性: {np.argsort(model.feature_importances_)[-3:][::-1]}\")",
     },
     {
         "category": "预测",
@@ -59,6 +64,7 @@ MODELS = [
         "python_libs": "prophet.Prophet",
         "mcm_type": ["C", "E"],
         "difficulty": "简单",
+        "code_example": "import pandas as pd\nfrom prophet import Prophet\n\n# 模拟两年日度数据\ndates = pd.date_range('2024-01-01', periods=730, freq='D')\ny = 100 + 0.2 * np.arange(730) + 20 * np.sin(2*np.pi*np.arange(730)/365.25) + np.random.randn(730)*5\ndf = pd.DataFrame({'ds': dates, 'y': y})\n\nmodel = Prophet(yearly_seasonality=True, weekly_seasonality=False)\nmodel.fit(df)\nfuture = model.make_future_dataframe(periods=90)\nforecast = model.predict(future)\nfig = model.plot(forecast)",
     },
     {
         "category": "预测",
@@ -69,6 +75,7 @@ MODELS = [
         "python_libs": "scipy.integrate.solve_ivp",
         "mcm_type": ["A"],
         "difficulty": "中等",
+        "code_example": "from scipy.integrate import solve_ivp\nimport numpy as np\n\ndef sir(t, y, beta, gamma):\n    S, I, R = y\n    N = S + I + R\n    dS = -beta * S * I / N\n    dI = beta * S * I / N - gamma * I\n    dR = gamma * I\n    return [dS, dI, dR]\n\n# 参数: beta=传播率, gamma=康复率\nsol = solve_ivp(sir, [0, 160], [999, 1, 0], args=(0.3, 0.1), max_step=1)\nprint(f\"峰值感染人数: {sol.y[1].max():.0f} (第{sol.y[1].argmax()}天)\")",
     },
 
     # ===== 优化模型 =====
@@ -81,6 +88,7 @@ MODELS = [
         "python_libs": "scipy.optimize.linprog, pulp.LpProblem",
         "mcm_type": ["A", "B", "D", "E"],
         "difficulty": "入门",
+        "code_example": "from scipy.optimize import linprog\n\n# min c^T x  s.t. A_ub x <= b_ub\nc = [-3, -2]  # 目标: max 3x1 + 2x2 → min -3x1-2x2\nA_ub = [[2, 1], [1, 2]]  # 约束矩阵\nb_ub = [4, 3]  # 约束右端\nbounds = [(0, None), (0, None)]  # x1, x2 >= 0\n\nres = linprog(c, A_ub=A_ub, b_ub=b_ub, bounds=bounds)\nprint(f\"最优解: x1={res.x[0]:.2f}, x2={res.x[1]:.2f}, 目标值={-res.fun:.2f}\")",
     },
     {
         "category": "优化",
@@ -91,6 +99,7 @@ MODELS = [
         "python_libs": "pulp, ortools.sat, scipy.optimize.milp",
         "mcm_type": ["B", "D"],
         "difficulty": "中等",
+        "code_example": "from pulp import LpMaximize, LpProblem, LpVariable, lpSum\n\nprob = LpProblem(\"Knapsack\", LpMaximize)\nvalues = [10, 15, 7, 8, 12]\nweights = [2, 3, 1, 2, 4]\nx = [LpVariable(f\"x{i}\", cat=\"Binary\") for i in range(5)]\n\nprob += lpSum(values[i] * x[i] for i in range(5))\nprob += lpSum(weights[i] * x[i] for i in range(5)) <= 8\nprob.solve()\nprint(f\"最优值: {prob.objective.value():.0f}, 选中物品: {[i for i in range(5) if x[i].value() == 1]}\")",
     },
     {
         "category": "优化",
@@ -101,6 +110,7 @@ MODELS = [
         "python_libs": "标准库实现, functools.lru_cache",
         "mcm_type": ["B"],
         "difficulty": "中等",
+        "code_example": "from functools import lru_cache\n\n@lru_cache(maxsize=None)\ndef knapsack(i, capacity):\n    \"\"\"0-1背包: 前i件物品, 容量capacity的最大价值\"\"\"\n    if i == 0 or capacity == 0:\n        return 0\n    w, v = weights[i-1], values[i-1]\n    if w > capacity:\n        return knapsack(i-1, capacity)\n    return max(knapsack(i-1, capacity), v + knapsack(i-1, capacity - w))\n\nvalues, weights = [10, 15, 7, 8, 12], [2, 3, 1, 2, 4]\nprint(f\"最大价值: {knapsack(5, 8)}\")",
     },
     {
         "category": "优化",
@@ -111,6 +121,7 @@ MODELS = [
         "python_libs": "deap, pymoo, geneticalgorithm",
         "mcm_type": ["B", "D", "E", "F"],
         "difficulty": "中等",
+        "code_example": "import numpy as np\nfrom geneticalgorithm import geneticalgorithm as ga\n\n# 最小化 Rastrigin 函数 (多峰测试函数)\ndef f(X):\n    return 20 + X[0]**2 + X[1]**2 - 10*(np.cos(2*np.pi*X[0])+np.cos(2*np.pi*X[1]))\n\nalgorithm_param = {'max_num_iteration': 100, 'population_size': 50}\nmodel = ga(function=f, dimension=2, variable_boundaries=[[-5,5],[-5,5]],\n           algorithm_parameters=algorithm_param)\nmodel.run()\nprint(f\"最优解: {model.output_dict['variable']}\")",
     },
     {
         "category": "优化",
@@ -121,6 +132,7 @@ MODELS = [
         "python_libs": "pyswarms, pymoo.algorithms.soo.PSO",
         "mcm_type": ["A", "B", "D"],
         "difficulty": "简单",
+        "code_example": "import numpy as np\nfrom pyswarms.single import GlobalBestPSO\n\n# 最小化 sphere 函数\noptions = {'c1': 0.5, 'c2': 0.3, 'w': 0.9}\noptimizer = GlobalBestPSO(n_particles=50, dimensions=3, options=options)\n\ncost, pos = optimizer.optimize(lambda x: np.sum(x**2, axis=1), iters=200)\nprint(f\"最优位置: {np.round(pos, 4)}, 最优值: {cost:.6f}\")",
     },
     {
         "category": "优化",
@@ -131,6 +143,7 @@ MODELS = [
         "python_libs": "scipy.optimize.dual_annealing, simanneal",
         "mcm_type": ["B", "D"],
         "difficulty": "中等",
+        "code_example": "from scipy.optimize import dual_annealing\nimport numpy as np\n\n# 寻找全局最小值 — Eggholder 函数 (经典困难问题)\ndef eggholder(x):\n    return -(x[0]+47)*np.sin(np.sqrt(abs(x[0]/2+(x[1]+47)))) - x[0]*np.sin(np.sqrt(abs(x[0]-(x[1]+47))))\n\nresult = dual_annealing(eggholder, bounds=[(-512, 512), (-512, 512)], maxiter=200)\nprint(f\"找到的最优值: {result.fun:.4f} at {np.round(result.x, 2)}\")",
     },
     {
         "category": "优化",
@@ -141,6 +154,7 @@ MODELS = [
         "python_libs": "pymoo.algorithms.moo.nsga2.NSGA2",
         "mcm_type": ["D", "E", "F"],
         "difficulty": "进阶",
+        "code_example": "import numpy as np\nfrom pymoo.algorithms.moo.nsga2 import NSGA2\nfrom pymoo.problems import get_problem\nfrom pymoo.optimize import minimize\n\n# ZDT1 — 经典双目标测试问题\nproblem = get_problem(\"zdt1\")\nalgorithm = NSGA2(pop_size=100)\nres = minimize(problem, algorithm, ('n_gen', 200), seed=42, verbose=False)\nprint(f\"Pareto前沿解数量: {len(res.F)}, 目标1范围: [{res.F[:,0].min():.3f},{res.F[:,0].max():.3f}]\")",
     },
     {
         "category": "优化",
@@ -151,6 +165,7 @@ MODELS = [
         "python_libs": "acopy, numpy (自行实现)",
         "mcm_type": ["B", "D"],
         "difficulty": "中等",
+        "code_example": "import numpy as np\n\n# 简化的 ACO 求解 TSP\ndist = np.array([[0, 3, 4, 7], [3, 0, 2, 5], [4, 2, 0, 6], [7, 5, 6, 0]])\nn_cities = len(dist)\npheromone = np.ones((n_cities, n_cities)) * 0.1  # 初始化信息素\n\nfor _ in range(100):  # 100 轮迭代\n    path = [0]\n    unvisited = list(range(1, n_cities))\n    while unvisited:\n        probs = np.array([(pheromone[path[-1], j] / dist[path[-1], j]) for j in unvisited])\n        chosen = np.random.choice(unvisited, p=probs/probs.sum())\n        path.append(chosen); unvisited.remove(chosen)\n    length = sum(dist[path[i], path[(i+1)%n_cities]] for i in range(n_cities))\n    pheromone *= 0.9  # 挥发\n    for i in range(n_cities):\n        pheromone[path[i], path[(i+1)%n_cities]] += 1.0 / length\nprint(f\"最短路径长度: {length:.2f}\")",
     },
     {
         "category": "优化",
@@ -161,6 +176,7 @@ MODELS = [
         "python_libs": "numpy.random, scipy.stats",
         "mcm_type": ["A", "B", "C", "D", "E", "F"],
         "difficulty": "简单",
+        "code_example": "import numpy as np\n\n# 蒙特卡洛估算 π\ndef estimate_pi(n_samples=100000):\n    x, y = np.random.rand(n_samples), np.random.rand(n_samples)\n    inside = (x**2 + y**2) <= 1\n    pi_est = 4 * inside.sum() / n_samples\n    return pi_est\n\n# 蒙特卡洛 VaR (风险价值)\nreturns = np.random.normal(0.001, 0.02, (10000, 252))\nannual_returns = (1 + returns).prod(axis=1) - 1\nvar_95 = np.percentile(annual_returns, 5)\nprint(f\"π ≈ {estimate_pi():.4f}, 95% VaR: {var_95:.2%}\")",
     },
 
     # ===== 评价模型 =====
@@ -173,6 +189,7 @@ MODELS = [
         "python_libs": "pyahp, numpy (自行实现判断矩阵特征向量)",
         "mcm_type": ["D", "E", "F"],
         "difficulty": "入门",
+        "code_example": "import numpy as np\n\n# 判断矩阵 (1-9标度法, 3x3示例)\nA = np.array([[1,   3,   5],\n              [1/3, 1,   2],\n              [1/5, 1/2, 1]])\n\neigvals, eigvecs = np.linalg.eig(A)\nmax_eig = eigvals.real.max()\nweights = eigvecs[:, eigvals.real.argmax()].real\nweights /= weights.sum()\nCI = (max_eig - 3) / 2  # n=3\nCR = CI / 0.58  # RI=0.58 for n=3\nprint(f\"权重: {np.round(weights, 3)}, CR: {CR:.3f} {'✓ 通过' if CR < 0.1 else '✗ 不通过'}\")",
     },
     {
         "category": "评价",
@@ -183,6 +200,7 @@ MODELS = [
         "python_libs": "numpy (自行实现), topsis-icm",
         "mcm_type": ["D", "E", "F"],
         "difficulty": "简单",
+        "code_example": "import numpy as np\n\n# 4方案 x 3指标 (已正向化)\nX = np.array([[8, 7, 2], [9, 6, 4], [6, 8, 3], [7, 9, 1]])\n\n# 归一化\nX_norm = X / np.sqrt((X**2).sum(axis=0))\n# 正/负理想解\nbest = X_norm.max(axis=0); worst = X_norm.min(axis=0)\n# 距离\nD_pos = np.sqrt(((X_norm - best)**2).sum(axis=1))\nD_neg = np.sqrt(((X_norm - worst)**2).sum(axis=1))\n# 相对贴近度\nscores = D_neg / (D_pos + D_neg)\nprint(f\"排名: {np.argsort(-scores) + 1}, 得分: {np.round(scores, 4)}\")",
     },
     {
         "category": "评价",
@@ -193,6 +211,7 @@ MODELS = [
         "python_libs": "numpy, scipy.stats.entropy",
         "mcm_type": ["D", "E", "F"],
         "difficulty": "简单",
+        "code_example": "import numpy as np\n\nX = np.array([[8, 7, 2], [9, 6, 4], [6, 8, 3], [7, 9, 1]])\n\n# 归一化 (效益型指标)\nP = X / X.sum(axis=0)\n# 计算熵值\nk = 1 / np.log(len(X))\ne = -k * (P * np.log(P.clip(1e-10))).sum(axis=0)\n# 熵权\nw = (1 - e) / (1 - e).sum()\nprint(f\"各指标权重: {np.round(w, 4)}\")",
     },
     {
         "category": "评价",
@@ -203,6 +222,7 @@ MODELS = [
         "python_libs": "numpy (自行实现), scikit-fuzzy",
         "mcm_type": ["E", "F"],
         "difficulty": "中等",
+        "code_example": "import numpy as np\n\n# 评价等级: 差/中/良/优 的隶属度矩阵 (3指标 x 4等级)\nR = np.array([[0.1, 0.3, 0.4, 0.2],\n              [0.0, 0.2, 0.5, 0.3],\n              [0.2, 0.4, 0.3, 0.1]])\n# 指标权重\nW = np.array([0.35, 0.40, 0.25])\n# 模糊合成\nB = W @ R\n# 最大隶属度原则\nlevels = ['差', '中', '良', '优']\nprint(f\"综合评价向量: {np.round(B, 3)}\")\nprint(f\"评价结果: {levels[B.argmax()]}\")",
     },
     {
         "category": "评价",
@@ -213,6 +233,7 @@ MODELS = [
         "python_libs": "pyDEA, pulp (建模求解)",
         "mcm_type": ["D", "F"],
         "difficulty": "中等",
+        "code_example": "from pulp import LpProblem, LpVariable, lpSum, LpMinimize, value\n\n# CCR模型: 1投入2产出, 评价4个DMU\ninputs = [2, 3, 4, 2.5]\noutputs = [[3, 2], [4, 3], [5, 4], [3.5, 3]]\n\nfor k in range(4):\n    prob = LpProblem(f\"DEA_DMU{k}\", LpMinimize)\n    theta = LpVariable(\"theta\", 0, 1)\n    lam = [LpVariable(f\"l{j}\", 0) for j in range(4)]\n    prob += theta\n    prob += lpSum(inputs[j]*lam[j] for j in range(4)) <= theta*inputs[k]\n    for r in range(2):\n        prob += lpSum(outputs[j][r]*lam[j] for j in range(4)) >= outputs[k][r]\n    prob.solve()\n    print(f\"DMU{k} 效率: {value(prob.objective):.3f}\")",
     },
 
     # ===== 统计与数据处理 =====
@@ -225,6 +246,7 @@ MODELS = [
         "python_libs": "sklearn.decomposition.PCA",
         "mcm_type": ["C", "D", "E"],
         "difficulty": "入门",
+        "code_example": "from sklearn.decomposition import PCA\nimport numpy as np\n\nX = np.random.randn(200, 8)  # 200样本, 8特征\npca = PCA().fit(X)\n\n# 累计方差贡献率\ncumsum = np.cumsum(pca.explained_variance_ratio_)\nn_components = np.searchsorted(cumsum, 0.9) + 1  # 保留90%方差\nprint(f\"前{n_components}个主成分可解释{cumsum[n_components-1]:.1%}方差\")\n\nX_reduced = PCA(n_components=2).fit_transform(X)\nprint(f\"降维后形状: {X_reduced.shape}\")",
     },
     {
         "category": "统计",
@@ -235,6 +257,7 @@ MODELS = [
         "python_libs": "sklearn.cluster.KMeans",
         "mcm_type": ["C"],
         "difficulty": "入门",
+        "code_example": "from sklearn.cluster import KMeans\nfrom sklearn.metrics import silhouette_score\nimport numpy as np\n\nX = np.vstack([\n    np.random.randn(100, 2) + [0, 0],\n    np.random.randn(100, 2) + [5, 5],\n    np.random.randn(100, 2) + [0, 5],\n])\n\nfor k in [2, 3, 4]:\n    labels = KMeans(n_clusters=k, n_init=10, random_state=42).fit_predict(X)\n    score = silhouette_score(X, labels)\n    print(f\"K={k}, 轮廓系数: {score:.4f}\")",
     },
     {
         "category": "统计",
@@ -245,6 +268,7 @@ MODELS = [
         "python_libs": "scipy.stats.ttest_ind, scipy.stats.f_oneway",
         "mcm_type": ["A", "B", "C", "D", "E", "F"],
         "difficulty": "入门",
+        "code_example": "from scipy.stats import ttest_ind, f_oneway\nimport numpy as np\n\n# 两组独立样本 t检验\ngroup1 = np.random.normal(5.0, 1.5, 50)\ngroup2 = np.random.normal(5.8, 1.5, 50)\nt_stat, p_val = ttest_ind(group1, group2)\nprint(f\"t检验: t={t_stat:.3f}, p={p_val:.4f} {'***显著' if p_val < 0.05 else '不显著'}\")\n\n# 三组方差分析\nf_stat, p_f = f_oneway(group1, group2, np.random.normal(5.2, 1.5, 50))\nprint(f\"ANOVA: F={f_stat:.3f}, p={p_f:.4f} {'***显著' if p_f < 0.05 else '不显著'}\")",
     },
     {
         "category": "统计",
@@ -255,6 +279,7 @@ MODELS = [
         "python_libs": "pandas.DataFrame.corr, scipy.stats.pearsonr",
         "mcm_type": ["A", "B", "C", "D", "E", "F"],
         "difficulty": "入门",
+        "code_example": "import pandas as pd\nimport numpy as np\n\n# 构造相关数据\ndf = pd.DataFrame({\n    'x1': np.random.randn(100),\n    'x2': np.random.randn(100),\n    'y': np.random.randn(100),\n})\ndf['x2'] = df['x1'] * 0.7 + np.random.randn(100) * 0.3  # x2 与 x1 相关\ndf['y'] = df['x1'] * 0.5 + np.random.randn(100) * 0.8\n\ncorr = df.corr()\nprint(\"相关系数矩阵:\\n\", corr.round(3))\nprint(f\"\\n|x1-y| = {corr.loc['x1','y']:.3f}, |x1-x2| = {corr.loc['x1','x2']:.3f}\")",
     },
     {
         "category": "统计",
@@ -265,6 +290,7 @@ MODELS = [
         "python_libs": "sklearn.linear_model.LogisticRegression",
         "mcm_type": ["C", "F"],
         "difficulty": "入门",
+        "code_example": "from sklearn.linear_model import LogisticRegression\nfrom sklearn.metrics import accuracy_score\nimport numpy as np\n\nX = np.random.randn(500, 4)\ny = (X[:, 0] + X[:, 1] * 0.5 > 0).astype(int)  # 线性决策边界\n\nmodel = LogisticRegression().fit(X, y)\nprobs = model.predict_proba(X)[:, 1]\npred = model.predict(X)\nprint(f\"准确率: {accuracy_score(y, pred):.3f}\")\nprint(f\"概率范围: [{probs.min():.2f}, {probs.max():.2f}]\")",
     },
 
     # ===== 图论与网络 =====
@@ -277,6 +303,7 @@ MODELS = [
         "python_libs": "networkx.shortest_path, scipy.sparse.csgraph",
         "mcm_type": ["B", "D"],
         "difficulty": "入门",
+        "code_example": "import networkx as nx\n\nG = nx.Graph()\nG.add_weighted_edges_from([\n    (0, 1, 4), (0, 2, 2), (1, 2, 1), (1, 3, 5),\n    (2, 3, 8), (2, 4, 10), (3, 4, 2), (3, 5, 6), (4, 5, 3)\n])\n\npath = nx.shortest_path(G, source=0, target=5, weight='weight')\nlength = nx.shortest_path_length(G, source=0, target=5, weight='weight')\nprint(f\"最短路径: {path}, 总距离: {length}\")",
     },
     {
         "category": "图论",
@@ -287,6 +314,7 @@ MODELS = [
         "python_libs": "networkx.minimum_spanning_tree",
         "mcm_type": ["B", "D"],
         "difficulty": "入门",
+        "code_example": "import networkx as nx\n\n# 6 个城市的距离图\nG = nx.Graph()\nG.add_weighted_edges_from([\n    (0,1,7), (0,3,5), (1,2,8), (1,3,9), (1,4,7),\n    (2,4,5), (3,4,15), (3,5,6), (4,5,8), (4,6,9), (5,6,11)\n])\n\nmst = nx.minimum_spanning_tree(G)\nedges = [(u, v, d['weight']) for u, v, d in mst.edges(data=True)]\ntotal = sum(d['weight'] for _, _, d in mst.edges(data=True))\nprint(f\"MST 边: {edges}\")\nprint(f\"总权重: {total}\")",
     },
     {
         "category": "图论",
@@ -297,6 +325,7 @@ MODELS = [
         "python_libs": "networkx.maximum_flow, ortools.maxflow",
         "mcm_type": ["B", "D"],
         "difficulty": "中等",
+        "code_example": "import networkx as nx\n\nG = nx.DiGraph()\nG.add_edge('S', 'A', capacity=10)\nG.add_edge('S', 'B', capacity=5)\nG.add_edge('A', 'B', capacity=3)\nG.add_edge('A', 'C', capacity=8)\nG.add_edge('B', 'C', capacity=7)\nG.add_edge('B', 'D', capacity=4)\nG.add_edge('C', 'T', capacity=10)\nG.add_edge('D', 'T', capacity=6)\n\nflow_val, flow_dict = nx.maximum_flow(G, 'S', 'T')\nprint(f\"最大流: {flow_val}\")\nprint(f\"各边流量: {[(u,v,d) for u,v,d in flow_dict.items() if flow_dict[u]]}\")",
     },
     {
         "category": "图论",
@@ -307,6 +336,7 @@ MODELS = [
         "python_libs": "networkx.pagerank",
         "mcm_type": ["D"],
         "difficulty": "简单",
+        "code_example": "import networkx as nx\n\n# 有向图: 页面引用关系\nG = nx.DiGraph()\nG.add_edges_from([\n    (0,1), (0,2), (1,2), (1,3), (2,3), (3,0), (3,1), (4,0), (4,2)\n])\n\npr = nx.pagerank(G, alpha=0.85)\nfor node, score in sorted(pr.items(), key=lambda x: -x[1]):\n    print(f\"节点{node}: {score:.4f}\")",
     },
     {
         "category": "图论",
@@ -317,6 +347,7 @@ MODELS = [
         "python_libs": "networkx.algorithms.community, python-louvain",
         "mcm_type": ["D"],
         "difficulty": "中等",
+        "code_example": "import networkx as nx\nfrom networkx.algorithms.community import greedy_modularity_communities\n\n# Karate Club 网络 (经典社交网络)\nG = nx.karate_club_graph()\n\ncommunities = list(greedy_modularity_communities(G))\nfor i, comm in enumerate(communities):\n    print(f\"社区{i}: {sorted(comm)} (共{len(comm)}人)\")\nprint(f\"模块度: {nx.algorithms.community.modularity(G, communities):.3f}\")",
     },
 
     # ===== 微分方程 =====
@@ -329,6 +360,7 @@ MODELS = [
         "python_libs": "scipy.integrate.solve_ivp, scipy.integrate.odeint",
         "mcm_type": ["A", "E"],
         "difficulty": "中等",
+        "code_example": "from scipy.integrate import solve_ivp\nimport numpy as np\n\n# Lotka-Volterra 捕食者-猎物模型\ndef lotka_volterra(t, y, a, b, c, d):\n    prey, predator = y\n    return [a*prey - b*prey*predator, -c*predator + d*prey*predator]\n\nsol = solve_ivp(lotka_volterra, [0, 30], [10, 5], args=(1.0, 0.1, 1.5, 0.075), max_step=0.1)\nprint(f\"t=30 时 猎物: {sol.y[0,-1]:.1f}, 捕食者: {sol.y[1,-1]:.1f}\")",
     },
     {
         "category": "方程",
@@ -339,5 +371,6 @@ MODELS = [
         "python_libs": "numpy (有限差分自行实现), fenics, scipy",
         "mcm_type": ["A"],
         "difficulty": "进阶",
+        "code_example": "import numpy as np\n\n# 一维热传导 ∂u/∂t = α ∂²u/∂x², 显式有限差分\nL, T, nx, nt, alpha = 1.0, 0.5, 50, 500, 0.01\ndx, dt = L/(nx-1), T/nt\nr = alpha * dt / dx**2\n\n# 初始条件: 中心高斯温度分布\nu = np.exp(-((np.linspace(0, L, nx) - 0.5)/0.1)**2)\n\nfor _ in range(nt):\n    u[1:-1] += r * (u[:-2] - 2*u[1:-1] + u[2:])\n\nprint(f\"热扩散后中心温度: {u[nx//2]:.4f}, 边界: {u[0]:.4f}\")",
     },
 ]

@@ -1,9 +1,9 @@
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, Response, stream_with_context
 from src.prompts import (
     ROLES_INFO, SYSTEM_MCM_EN, SYSTEM_MCM_CN, SYSTEM_AI_REPORT,
     PAPER_PROMPT, AI_REPORT_PROMPT, LATEX_TEMPLATE,
 )
-from src.llm_client import generate_response
+from src.llm_client import generate_response, generate_stream
 from src.models_data import MODELS
 from src.problems_data import PROBLEMS
 from src.guide_data import GUIDE
@@ -144,6 +144,62 @@ def generate():
         return jsonify({"content": result})
     except Exception as e:
         return jsonify({"error": f"生成失败: {str(e)}"}), 500
+
+
+@app.route("/api/generate/stream", methods=["POST"])
+def generate_stream_endpoint():
+    data = request.get_json()
+    problem = data.get("problem", "").strip()
+    requirements = data.get("requirements", "").strip()
+    contest_type = data.get("contest_type", "MCM/ICM")
+    problem_type = data.get("problem_type", "A")
+    problem_category = data.get("problem_category", "连续型")
+
+    if not problem:
+        return jsonify({"error": "请输入题目描述"}), 400
+
+    if contest_type == "CUMCM":
+        system_prompt = SYSTEM_MCM_CN.format(
+            contest_type="国赛 CUMCM",
+            problem_type=problem_type,
+            language_instruction="使用中文撰写论文框架，按国赛格式。",
+        )
+        language_block = ""
+        abstract_note = "中文摘要 300 字左右，单独成页"
+        ref_note = "建议引用 10-15 篇中文核心文献"
+    else:
+        system_prompt = SYSTEM_MCM_EN
+        language_block = "**IMPORTANT: Generate the paper framework in ENGLISH. Follow MCM/ICM standards strictly.**"
+        abstract_note = "English summary, 200-250 words, standalone page, NO formulas or citations"
+        ref_note = "Suggest 15-20 authoritative English references in APA 7th edition"
+
+    user_prompt = PAPER_PROMPT.format(
+        contest_type=contest_type,
+        problem_type=problem_type,
+        problem_category=problem_category,
+        problem=problem,
+        requirements=requirements or "无特殊要求",
+        language_block=language_block,
+        abstract_note=abstract_note,
+        ref_note=ref_note,
+    )
+
+    def generate():
+        try:
+            for chunk in generate_stream(system_prompt, user_prompt):
+                yield f"data: {chunk}\n\n"
+            yield "data: [DONE]\n\n"
+        except Exception as e:
+            yield f"data: [ERROR] {e}\n\n"
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 # ===== API: AI Use Report =====

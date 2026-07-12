@@ -1,4 +1,31 @@
 // ============================================================
+// Dark Mode
+// ============================================================
+const THEME_KEY = 'mma-theme';
+const themeToggle = document.getElementById('theme-toggle');
+
+function getTheme() {
+  const saved = localStorage.getItem(THEME_KEY);
+  if (saved) return saved;
+  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+}
+
+function applyTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme);
+  themeToggle.textContent = theme === 'dark' ? '☀️' : '🌙';
+}
+
+function toggleTheme() {
+  const current = document.documentElement.getAttribute('data-theme') || 'light';
+  const next = current === 'dark' ? 'light' : 'dark';
+  localStorage.setItem(THEME_KEY, next);
+  applyTheme(next);
+}
+
+applyTheme(getTheme());
+themeToggle.addEventListener('click', toggleTheme);
+
+// ============================================================
 // Tab switching with lazy loading
 // ============================================================
 const loadedTabs = {};
@@ -65,7 +92,6 @@ async function loadModels() {
     allModels = data.models;
     modelCategories = data.categories;
 
-    // Populate category filter
     const catSelect = document.getElementById('model-category');
     catSelect.innerHTML = '<option value="">全部类别</option>' +
       modelCategories.map(c => `<option value="${c}">${c}</option>`).join('');
@@ -121,12 +147,12 @@ function renderModelGrid(models) {
   }
 
   grid.innerHTML = models.map(m => `
-    <div class="model-card" data-name="${m.name}" onclick="showModelDetail('${m.name}')">
+    <div class="model-card" data-name="${escapeHtml(m.name)}" onclick="showModelDetail('${escapeHtml(m.name)}')">
       <div class="model-card-header">
-        <span class="model-card-name">${m.name}</span>
+        <span class="model-card-name">${escapeHtml(m.name)}</span>
         <span class="model-card-diff diff-${m.difficulty}">${m.difficulty}</span>
       </div>
-      <p class="model-card-summary">${m.summary}</p>
+      <p class="model-card-summary">${escapeHtml(m.summary)}</p>
       <div class="model-card-tags">
         <span class="tag tag-category">${m.category}</span>
         ${m.mcm_type.map(t => `<span class="tag tag-type">${t} 题</span>`).join('')}
@@ -139,7 +165,6 @@ function renderModelGrid(models) {
 }
 
 async function showModelDetail(name) {
-  // Check if already open
   const existing = document.querySelector('.overlay');
   if (existing) existing.remove();
 
@@ -155,12 +180,16 @@ async function showModelDetail(name) {
     const m = await res.json();
     if (m.error) { overlay.remove(); return; }
 
+    const codeBlock = m.code_example
+      ? `<h3>代码示例</h3><pre><code>${escapeHtml(m.code_example)}</code></pre>`
+      : '';
+
     overlay.querySelector('.overlay-card').innerHTML = `
       <button class="overlay-close" onclick="this.closest('.overlay').remove()">&times;</button>
-      <h2>${m.name} <span class="model-card-diff diff-${m.difficulty}">${m.difficulty}</span></h2>
-      <p style="color:var(--text-secondary);margin-top:4px">${m.summary}</p>
+      <h2>${escapeHtml(m.name)} <span class="model-card-diff diff-${m.difficulty}">${m.difficulty}</span></h2>
+      <p style="color:var(--text-secondary);margin-top:4px">${escapeHtml(m.summary)}</p>
       <h3>适用场景</h3>
-      <p>${m.when}</p>
+      <p>${escapeHtml(m.when)}</p>
       <h3>Python 库</h3>
       <div class="model-card-libs">${m.python_libs.map(l => `<span class="tag tag-lib">${l}</span>`).join('')}</div>
       <h3>标签</h3>
@@ -169,13 +198,13 @@ async function showModelDetail(name) {
         ${m.tags.map(t => `<span class="tag tag-category">${t}</span>`).join('')}
         ${m.mcm_type.map(t => `<span class="tag tag-type">${t} 题</span>`).join('')}
       </div>
+      ${codeBlock}
     `;
   } catch (e) {
     overlay.remove();
   }
 }
 
-// Keyboard: ESC closes overlay
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
     const overlay = document.querySelector('.overlay');
@@ -197,7 +226,6 @@ async function loadProblems() {
     const data = await res.json();
     allProblems = data.problems;
 
-    // Populate filters
     document.getElementById('prob-contest').innerHTML = '<option value="">全部竞赛</option>' +
       data.contests.map(c => `<option value="${c}">${c}</option>`).join('');
     document.getElementById('prob-year').innerHTML = '<option value="">全部年份</option>' +
@@ -248,22 +276,20 @@ function renderProblemList(problems) {
         <span class="problem-year">${p.year}</span>
         <span style="font-size:12px;color:var(--text-secondary)">${p.category}</span>
       </div>
-      <h3>${p.title}</h3>
-      <p>${p.description}</p>
+      <h3>${escapeHtml(p.title)}</h3>
+      <p>${escapeHtml(p.description)}</p>
       <p class="hint-action">点击填入生成器 →</p>
     </div>
   `).join('');
 }
 
 function useProblem(contest, type, category, description, requirements) {
-  // Map contest to contest_type value
   const contestMap = { MCM: 'MCM/ICM', ICM: 'MCM/ICM', CUMCM: 'CUMCM' };
   document.getElementById('contest-type').value = contestMap[contest] || 'MCM/ICM';
   document.getElementById('problem-type').value = type;
   document.getElementById('problem').value = description;
   document.getElementById('requirements').value = requirements || '';
 
-  // Switch to generator tab
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   document.querySelector('[data-tab="generator"]').classList.add('active');
@@ -293,14 +319,14 @@ function renderTimeline(timeline) {
     <div class="timeline">
       ${timeline.map(d => `
         <div class="timeline-day">
-          <h3>${d.day}</h3>
-          <p class="timeline-goal">目标：${d.goal}</p>
+          <h3>${escapeHtml(d.day)}</h3>
+          <p class="timeline-goal">目标：${escapeHtml(d.goal)}</p>
           <div class="timeline-roles">
-            <div class="timeline-role"><strong>建模手</strong>${d.modeler}</div>
-            <div class="timeline-role"><strong>编程手</strong>${d.programmer}</div>
-            <div class="timeline-role"><strong>写作手</strong>${d.writer}</div>
+            <div class="timeline-role"><strong>建模手</strong>${escapeHtml(d.modeler)}</div>
+            <div class="timeline-role"><strong>编程手</strong>${escapeHtml(d.programmer)}</div>
+            <div class="timeline-role"><strong>写作手</strong>${escapeHtml(d.writer)}</div>
           </div>
-          <div class="timeline-checkpoint">检查点：${d.checkpoint}</div>
+          <div class="timeline-checkpoint">检查点：${escapeHtml(d.checkpoint)}</div>
         </div>
       `).join('')}
     </div>
@@ -312,9 +338,9 @@ function renderTools(tools) {
     <div class="tools-grid">
       ${tools.map(t => `
         <div class="tool-card">
-          <h3>${t.name}</h3>
-          <p class="tool-use">${t.use}</p>
-          <p class="tool-pkgs">${t.pkgs}</p>
+          <h3>${escapeHtml(t.name)}</h3>
+          <p class="tool-use">${escapeHtml(t.use)}</p>
+          <p class="tool-pkgs">${escapeHtml(t.pkgs)}</p>
         </div>
       `).join('')}
     </div>
@@ -334,7 +360,7 @@ function renderCodeStandards(standards) {
       ${Object.entries(standards).map(([k, v]) => `
         <div class="standard-item">
           <span class="standard-label">${labels[k] || k}</span>
-          <span class="standard-text">${v}</span>
+          <span class="standard-text">${escapeHtml(v)}</span>
         </div>
       `).join('')}
     </div>
@@ -342,13 +368,15 @@ function renderCodeStandards(standards) {
 }
 
 // ============================================================
-// Tab: Generator
+// Tab: Generator — SSE Streaming
 // ============================================================
 const generateBtn = document.getElementById('generate-btn');
 const aiReportBtn = document.getElementById('ai-report-btn');
 const resultDiv = document.getElementById('result');
 const resultContent = document.getElementById('result-content');
 const resultLabel = document.getElementById('result-label');
+const historyCard = document.getElementById('history-card');
+const historyList = document.getElementById('history-list');
 
 function setButtonsLoading(btn, loading) {
   btn.querySelector('.btn-text').hidden = loading;
@@ -374,12 +402,15 @@ generateBtn.addEventListener('click', async () => {
 
   setButtonsLoading(generateBtn, true);
   aiReportBtn.disabled = true;
-  resultDiv.classList.remove('visible');
-  resultContent.innerHTML = '';
+  resultDiv.classList.add('visible');
+  resultContent.innerHTML = '<p style="color:var(--text-secondary)"><span class="spinner spinner-dark"></span>生成中...</p>';
   resultLabel.textContent = '生成结果';
 
+  let fullContent = '';
+  let errorOccurred = false;
+
   try {
-    const res = await fetch('/api/generate', {
+    const res = await fetch('/api/generate/stream', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -390,20 +421,53 @@ generateBtn.addEventListener('click', async () => {
         problem_category: mapProblemCategory(problemType),
       }),
     });
-    const data = await res.json();
 
-    if (data.error) {
-      resultContent.innerHTML = `<p style="color:var(--red)">${data.error}</p>`;
-    } else {
-      resultContent.innerHTML = marked.parse(data.content);
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.error || `HTTP ${res.status}`);
     }
-    resultDiv.classList.add('visible');
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        const data = line.slice(6);
+
+        if (data === '[DONE]') continue;
+        if (data.startsWith('[ERROR]')) {
+          errorOccurred = true;
+          throw new Error(data.slice(8));
+        }
+
+        fullContent += data;
+        resultContent.innerHTML = marked.parse(fullContent);
+        resultContent.classList.add('streaming-cursor');
+      }
+    }
+
+    resultContent.classList.remove('streaming-cursor');
+    if (!errorOccurred && fullContent) {
+      resultContent.innerHTML = marked.parse(fullContent);
+      saveHistory(problem, contestType, problemType, fullContent);
+    }
   } catch (e) {
-    resultContent.innerHTML = '<p style="color:var(--red)">网络错误，请检查服务器是否运行</p>';
-    resultDiv.classList.add('visible');
+    if (!errorOccurred) {
+      resultContent.innerHTML = `<p style="color:var(--red)">生成失败: ${escapeHtml(e.message)}</p>`;
+    }
   } finally {
     setButtonsLoading(generateBtn, false);
     aiReportBtn.disabled = false;
+    resultContent.classList.remove('streaming-cursor');
     resultDiv.scrollIntoView({ behavior: 'smooth' });
   }
 });
@@ -432,7 +496,7 @@ aiReportBtn.addEventListener('click', async () => {
     const data = await res.json();
 
     if (data.error) {
-      resultContent.innerHTML = `<p style="color:var(--red)">${data.error}</p>`;
+      resultContent.innerHTML = `<p style="color:var(--red)">${escapeHtml(data.error)}</p>`;
     } else {
       resultContent.innerHTML = marked.parse(data.content);
     }
@@ -447,7 +511,9 @@ aiReportBtn.addEventListener('click', async () => {
   }
 });
 
-// Copy button
+// ============================================================
+// Download buttons
+// ============================================================
 document.getElementById('copy-btn').addEventListener('click', () => {
   const text = resultContent.innerText;
   navigator.clipboard.writeText(text).then(() => {
@@ -457,7 +523,50 @@ document.getElementById('copy-btn').addEventListener('click', () => {
   }).catch(() => showToast('复制失败'));
 });
 
-// LaTeX template button
+function downloadFile(content, filename, mimeType) {
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// Add download buttons to toolbar
+const downloadMdBtn = document.createElement('button');
+downloadMdBtn.className = 'btn-sm';
+downloadMdBtn.textContent = '下载 .md';
+downloadMdBtn.addEventListener('click', () => {
+  const text = resultContent.innerText;
+  if (!text.trim()) { showToast('没有可下载的内容'); return; }
+  downloadFile(text, 'paper-framework.md', 'text/markdown;charset=utf-8');
+  showToast('已下载 Markdown 文件');
+});
+
+const downloadTexBtn = document.createElement('button');
+downloadTexBtn.className = 'btn-sm';
+downloadTexBtn.textContent = '下载 .tex';
+downloadTexBtn.addEventListener('click', async () => {
+  try {
+    const res = await fetch('/api/latex');
+    const data = await res.json();
+    if (data.content) {
+      downloadFile(data.content, 'paper-template.tex', 'application/x-tex;charset=utf-8');
+      showToast('已下载 LaTeX 模板');
+    }
+  } catch (e) {
+    showToast('下载失败');
+  }
+});
+
+document.querySelector('.result-actions').appendChild(downloadMdBtn);
+document.querySelector('.result-actions').appendChild(downloadTexBtn);
+
+// Remove the old LaTeX button listener approach — we keep the button in toolbar
+// but update existing latex-btn to also trigger download
 document.getElementById('latex-btn').addEventListener('click', async () => {
   const btn = document.getElementById('latex-btn');
   const originalText = btn.textContent;
@@ -485,13 +594,89 @@ document.getElementById('latex-btn').addEventListener('click', async () => {
   }
 });
 
+// ============================================================
+// History (localStorage)
+// ============================================================
+const HISTORY_KEY = 'mma-history';
+const MAX_HISTORY = 5;
+
+function getHistory() {
+  try {
+    return JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
+  } catch { return []; }
+}
+
+function saveHistory(problem, contestType, problemType, content) {
+  const history = getHistory();
+  history.unshift({
+    problem: problem.slice(0, 120),
+    contestType,
+    problemType,
+    content,
+    time: new Date().toLocaleString('zh-CN'),
+  });
+  if (history.length > MAX_HISTORY) history.length = MAX_HISTORY;
+  localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+  renderHistory();
+}
+
+function renderHistory() {
+  const history = getHistory();
+  if (history.length === 0) {
+    historyCard.hidden = true;
+    return;
+  }
+
+  historyCard.hidden = false;
+  historyList.innerHTML = history.map((h, i) => `
+    <div class="history-item" onclick="restoreHistory(${i})">
+      <div class="history-item-top">
+        <span class="history-item-problem">${escapeHtml(h.problem)}</span>
+        <span class="history-item-time">${h.time}</span>
+      </div>
+      <div class="history-item-meta">${h.contestType} · ${h.problemType} 题 · ${h.content.length} 字</div>
+    </div>
+  `).join('');
+
+  // Add clear button
+  historyList.insertAdjacentHTML('beforeend', `
+    <div class="history-actions">
+      <button class="btn-sm" onclick="event.stopPropagation(); clearHistory()">清除记录</button>
+    </div>
+  `);
+}
+
+function restoreHistory(index) {
+  const history = getHistory();
+  const item = history[index];
+  if (!item) return;
+
+  resultDiv.classList.add('visible');
+  resultLabel.textContent = '历史记录';
+  resultContent.innerHTML = marked.parse(item.content);
+  resultDiv.scrollIntoView({ behavior: 'smooth' });
+  showToast('已恢复历史生成结果');
+}
+
+function clearHistory() {
+  localStorage.removeItem(HISTORY_KEY);
+  historyCard.hidden = true;
+  historyList.innerHTML = '';
+  showToast('历史记录已清除');
+}
+
+// Load history on init
+renderHistory();
+
+// ============================================================
+// Utilities
+// ============================================================
 function escapeHtml(str) {
+  if (!str) return '';
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-// ============================================================
 // Keyboard shortcut: Cmd/Ctrl+Enter to generate
-// ============================================================
 document.addEventListener('keydown', e => {
   if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
     const genTab = document.getElementById('tab-generator');
