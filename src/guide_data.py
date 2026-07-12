@@ -1,0 +1,52 @@
+GUIDE = {
+    "timeline": [
+        {
+            "day": "Day 1 (周四晚 - 周五)",
+            "goal": "选题 + 理解题目 + 查资料 + 确定初步模型思路",
+            "modeler": "通读所有题目，评估每个题目的数学难度和可行性，参与选题讨论。选定后深入分析，确定1-2个候选模型方案。",
+            "programmer": "查找相关代码资源、数据集、开源实现。评估模型的计算可行性。准备数据处理和可视化环境。",
+            "writer": "阅读优秀论文摘要，准备 LaTeX 模板。开始写问题重述和背景部分草稿。整理参考文献。",
+            "checkpoint": "周五 12:00 前确定选题",
+        },
+        {
+            "day": "Day 2 (周六)",
+            "goal": "模型建立 + 编程实现 + 初步结果",
+            "modeler": "完整推导模型公式，写出数学推导过程。与编程手反复沟通，将数学语言转化为算法。开始写模型建立章节。",
+            "programmer": "实现模型核心算法，跑出初步结果。做基础可视化。与建模手核对公式的正确实现。",
+            "writer": "完成问题重述、模型假设、符号说明。整理建模手的推导草稿成论文格式。绘制模型流程图。",
+            "checkpoint": "周六 22:00 前跑出第一版结果",
+        },
+        {
+            "day": "Day 3 (周日)",
+            "goal": "结果分析 + 敏感性检验 + 论文主体成型",
+            "modeler": "设计敏感性分析方案，确定需要检验的关键参数。分析结果，判断是否需要调整模型。写模型评价和改进章节。",
+            "programmer": "实现敏感性分析代码。优化可视化图表（高分辨率、规范标注）。跑最终结果。",
+            "writer": "写结果分析和敏感性分析章节。打磨所有图表标题和标注。开始写摘要草稿。",
+            "checkpoint": "周日 22:00 前论文主体完成 80%",
+        },
+        {
+            "day": "Day 4 (周一)",
+            "goal": "摘要定稿 + 全文润色 + 提交",
+            "modeler": "审核全文数学内容准确性，确保公式、符号、逻辑无误。",
+            "programmer": "整理附录代码，确保可复现。生成最终版图表。",
+            "writer": "摘要至少修改8稿。全文语言润色、格式统一。检查页数限制。最终提交。",
+            "checkpoint": "周一 18:00 前完成提交",
+        },
+    ],
+    "tools": [
+        {"name": "Python", "use": "数据处理、模型实现、可视化", "pkgs": "numpy, scipy, pandas, matplotlib, sklearn"},
+        {"name": "MATLAB", "use": "数值计算、符号运算、Simulink仿真", "pkgs": "Optimization Toolbox, Statistics Toolbox"},
+        {"name": "LaTeX", "use": "论文排版（强烈推荐）", "pkgs": "Overleaf 在线编辑器"},
+        {"name": "draw.io", "use": "流程图、示意图绘制", "pkgs": "-"},
+        {"name": "Excel / GeoGebra", "use": "快速数据处理 / 几何可视化", "pkgs": "-"},
+        {"name": "Git", "use": "团队协作版本控制", "pkgs": "GitHub / Gitee"},
+        {"name": "Zotero / Mendeley", "use": "参考文献管理", "pkgs": "-"},
+    ],
+    "code_standards": {
+        "structure": "每个模型一个 .py 文件，main.py 统一调用",
+        "naming": "函数用 snake_case，类用 PascalCase，变量名要有意义",
+        "comments": "每个函数必须有 docstring，关键步骤有行内注释",
+        "reproducibility": "设置随机种子 np.random.seed(42)，记录所有参数",
+        "output": "图表保存为 300dpi PNG，数据结果保存为 CSV",
+    },
+}

@@ -9,62 +9,190 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400;14..32,500;14..32,600;14..32,700&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
+
 <nav class="nav">
   <div class="nav-inner">
     <a href="#" class="logo">MMA</a>
     <div class="nav-links">
-      <button class="nav-btn active" data-tab="generator">Paper Generator</button>
-      <button class="nav-btn" data-tab="roles">Team Roles</button>
+      <button class="nav-btn active" data-tab="generator">Generator</button>
+      <button class="nav-btn" data-tab="models">Models</button>
+      <button class="nav-btn" data-tab="problems">Problems</button>
+      <button class="nav-btn" data-tab="guide">Guide</button>
+      <button class="nav-btn" data-tab="roles">Roles</button>
     </div>
   </div>
 </nav>
 
 <main>
-  <!-- Generator Tab -->
-  <section id="tab-generator" class="tab active">
-    <div class="hero">
-      <h1>数学建模论文生成器</h1>
-      <p>输入竞赛题目，获取完整论文框架、数学转化思路与 Python 代码</p>
+
+<!-- ============ TAB 1: Paper Generator ============ -->
+<section id="tab-generator" class="tab active">
+  <div class="hero">
+    <h1>数学建模论文生成器</h1>
+    <p>选择竞赛类型和题型，输入题目，获取完整论文框架 + 数学转编程思路 + Python 代码</p>
+  </div>
+
+  <div class="card input-card">
+    <!-- Competition type -->
+    <div class="field-row">
+      <div class="field flex-1">
+        <label>竞赛类型</label>
+        <select id="contest-type">
+          <option value="MCM/ICM">美赛 MCM/ICM（英文论文）</option>
+          <option value="CUMCM">国赛 CUMCM（中文论文）</option>
+        </select>
+      </div>
+      <div class="field flex-1">
+        <label>题目类型</label>
+        <select id="problem-type">
+          <option value="A">A 题 — 连续型</option>
+          <option value="B">B 题 — 离散型</option>
+          <option value="C">C 题 — 数据洞察</option>
+          <option value="D">D 题 — 网络科学</option>
+          <option value="E">E 题 — 可持续性</option>
+          <option value="F">F 题 — 政策研究</option>
+        </select>
+      </div>
     </div>
 
-    <div class="card input-card">
-      <div class="field">
-        <label for="problem">竞赛题目</label>
-        <textarea id="problem" rows="4" placeholder="粘贴完整题目描述..."></textarea>
-      </div>
-      <div class="field">
-        <label for="requirements">具体要求 <span class="hint">（可选）</span></label>
-        <textarea id="requirements" rows="2" placeholder="如：必须使用优化模型、需做敏感性分析..."></textarea>
-      </div>
+    <!-- Problem input -->
+    <div class="field">
+      <label for="problem">竞赛题目</label>
+      <textarea id="problem" rows="4" placeholder="粘贴完整题目描述..."></textarea>
+    </div>
+    <div class="field">
+      <label for="requirements">具体要求 <span class="hint">（可选）</span></label>
+      <textarea id="requirements" rows="2" placeholder="如：必须使用优化模型、需做敏感性分析..."></textarea>
+    </div>
+
+    <div class="btn-row">
       <button id="generate-btn" class="btn-primary">
-        <span class="btn-text">生成方案</span>
-        <span class="btn-loading" hidden>生成中...</span>
+        <span class="btn-text">生成论文方案</span>
+        <span class="btn-loading" hidden><span class="spinner"></span>生成中（约 15-30 秒）...</span>
+      </button>
+      <button id="ai-report-btn" class="btn-secondary">
+        <span class="btn-text">生成 AI 使用报告</span>
+        <span class="btn-loading" hidden><span class="spinner"></span>生成中...</span>
       </button>
     </div>
+  </div>
 
-    <div id="result" class="card result-card" hidden>
-      <div class="result-toolbar">
-        <span class="result-label">生成结果</span>
+  <!-- Result -->
+  <div id="result" class="card result-card" hidden>
+    <div class="result-toolbar">
+      <span class="result-label" id="result-label">生成结果</span>
+      <div class="result-actions">
         <button id="copy-btn" class="btn-sm">复制全文</button>
+        <button id="latex-btn" class="btn-sm">LaTeX 模板</button>
       </div>
-      <div id="result-content" class="markdown-body"></div>
     </div>
-  </section>
+    <div id="result-content" class="markdown-body"></div>
+  </div>
+</section>
 
-  <!-- Roles Tab -->
-  <section id="tab-roles" class="tab">
-    <div class="hero">
-      <h1>团队角色与职责</h1>
-      <p>数学建模竞赛中三位成员的分工与协作指南</p>
+<!-- ============ TAB 2: Model Library ============ -->
+<section id="tab-models" class="tab">
+  <div class="hero">
+    <h1>模型参考库</h1>
+    <p>30+ 常用数学模型速查：原理、适用场景、Python 实现</p>
+  </div>
+
+  <div class="card">
+    <div class="filter-bar">
+      <input type="text" id="model-search" placeholder="搜索模型..." class="search-input">
+      <select id="model-category" class="filter-select">
+        <option value="">全部类别</option>
+      </select>
+      <select id="model-type" class="filter-select">
+        <option value="">全部题型</option>
+        <option value="A">A 连续型</option>
+        <option value="B">B 离散型</option>
+        <option value="C">C 数据洞察</option>
+        <option value="D">D 网络科学</option>
+        <option value="E">E 可持续性</option>
+        <option value="F">F 政策</option>
+      </select>
+      <select id="model-difficulty" class="filter-select">
+        <option value="">全部难度</option>
+        <option value="入门">入门</option>
+        <option value="简单">简单</option>
+        <option value="中等">中等</option>
+        <option value="进阶">进阶</option>
+      </select>
     </div>
-    <div class="card">
-      <div id="roles-content" class="markdown-body"></div>
+    <div id="model-count" class="filter-hint"></div>
+    <div id="model-grid" class="model-grid"></div>
+  </div>
+</section>
+
+<!-- ============ TAB 3: Real Problems ============ -->
+<section id="tab-problems" class="tab">
+  <div class="hero">
+    <h1>竞赛真题库</h1>
+    <p>2024-2025 年美赛 & 国赛真题，点击即可填入生成器</p>
+  </div>
+
+  <div class="card">
+    <div class="filter-bar">
+      <select id="prob-contest" class="filter-select">
+        <option value="">全部竞赛</option>
+      </select>
+      <select id="prob-year" class="filter-select">
+        <option value="">全部年份</option>
+      </select>
+      <select id="prob-type" class="filter-select">
+        <option value="">全部题型</option>
+        <option value="A">A 题</option>
+        <option value="B">B 题</option>
+        <option value="C">C 题</option>
+        <option value="D">D 题</option>
+        <option value="E">E 题</option>
+        <option value="F">F 题</option>
+      </select>
     </div>
-  </section>
+    <div id="prob-count" class="filter-hint"></div>
+    <div id="problem-list" class="problem-list"></div>
+  </div>
+</section>
+
+<!-- ============ TAB 4: Competition Guide ============ -->
+<section id="tab-guide" class="tab">
+  <div class="hero">
+    <h1>竞赛全流程指南</h1>
+    <p>4 天时间规划 · 工具清单 · 代码规范 · 避坑指南</p>
+  </div>
+
+  <div class="card">
+    <h2 class="section-title">4 天时间线</h2>
+    <div id="timeline-container"></div>
+  </div>
+
+  <div class="card">
+    <h2 class="section-title">推荐工具链</h2>
+    <div id="tools-container"></div>
+  </div>
+
+  <div class="card">
+    <h2 class="section-title">代码规范</h2>
+    <div id="code-standards-container"></div>
+  </div>
+</section>
+
+<!-- ============ TAB 5: Team Roles ============ -->
+<section id="tab-roles" class="tab">
+  <div class="hero">
+    <h1>团队角色与职责</h1>
+    <p>三位成员的分工 + 每日任务清单 + 协作检查点</p>
+  </div>
+  <div class="card">
+    <div id="roles-content" class="markdown-body"></div>
+  </div>
+</section>
+
 </main>
 
 <footer>
-  <p>Math Modeling Assistant &middot; Powered by DeepSeek</p>
+  <p>Math Modeling Assistant &middot; Powered by DeepSeek &middot; For MCM/ICM & CUMCM</p>
 </footer>
 
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
