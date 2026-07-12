@@ -1,17 +1,20 @@
-import anthropic
+from openai import OpenAI
 import config
 
-
-def get_client():
-    return anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
+_client = OpenAI(
+    api_key=config.DEEPSEEK_API_KEY,
+    base_url=config.DEEPSEEK_BASE_URL,
+)
 
 
 def generate_response(system_prompt, user_prompt, max_tokens=8000):
-    client = get_client()
-    message = client.messages.create(
+    response = _client.chat.completions.create(
         model=config.MODEL,
         max_tokens=max_tokens,
-        system=system_prompt,
-        messages=[{"role": "user", "content": user_prompt}],
+        temperature=0.3,
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
     )
-    return message.content[0].text
+    return response.choices[0].message.content

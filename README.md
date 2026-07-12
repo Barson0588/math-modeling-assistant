@@ -16,21 +16,21 @@
 ```
 用户输入 (题目 + 要求)
        ↓
-Flask API → Anthropic Claude API
+Flask API → DeepSeek API
        ↓
 Markdown 渲染 (论文框架 + 代码)
 ```
 
 - **前端**: 原生 HTML/CSS/JS，零依赖框架，极简设计
 - **后端**: Python Flask
-- **LLM**: Anthropic Claude (Sonnet 4.6)，数学推理 + 代码生成能力最强
+- **LLM**: DeepSeek Chat，数学推理 + 代码生成，性价比极高
 
 ## 快速开始
 
 ### 1. 环境要求
 
 - Python 3.10+
-- Anthropic API Key（在 [console.anthropic.com](https://console.anthropic.com) 获取）
+- DeepSeek API Key（在 [platform.deepseek.com](https://platform.deepseek.com) 获取，新用户送免费额度）
 
 ### 2. 安装
 
@@ -41,10 +41,10 @@ pip install -r requirements.txt
 
 ### 3. 配置 API Key
 
-编辑 `config.py`，将 `your-api-key-here` 替换为你的 Anthropic API Key：
+编辑 `config.py`，将 key 替换为你的 DeepSeek API Key：
 
 ```python
-ANTHROPIC_API_KEY = "sk-ant-xxx..."  # 替换为你的 key
+DEEPSEEK_API_KEY = "sk-xxx..."  # 替换为你的 key
 ```
 
 ### 4. 启动
@@ -82,7 +82,7 @@ math-modeling-assistant/
 ├── config.py           # API Key 配置
 ├── requirements.txt    # 依赖
 ├── src/
-│   ├── llm_client.py   # Anthropic API 封装
+│   ├── llm_client.py   # DeepSeek API 封装 (OpenAI 兼容)
 │   └── prompts.py      # System Prompt + 角色信息
 ├── templates/
 │   └── index.html      # 前端页面
