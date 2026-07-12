@@ -12,7 +12,7 @@ function getTheme() {
 
 function applyTheme(theme) {
   document.documentElement.setAttribute('data-theme', theme);
-  themeToggle.textContent = theme === 'dark' ? '☀️' : '🌙';
+  if (themeToggle) themeToggle.textContent = theme === 'dark' ? '☀️' : '🌙';
 }
 
 function toggleTheme() {
@@ -23,10 +23,55 @@ function toggleTheme() {
 }
 
 applyTheme(getTheme());
-themeToggle.addEventListener('click', toggleTheme);
+if (themeToggle) themeToggle.addEventListener('click', toggleTheme);
 
 // ============================================================
-// Tab switching with lazy loading
+// Eager preloading — fetch model & problem data immediately
+// so tabs are ready when clicked
+// ============================================================
+let allModels = [];
+let modelCategories = [];
+let allProblems = [];
+let modelsReady = false;
+let problemsReady = false;
+
+(async function preload() {
+  try {
+    const [mRes, pRes] = await Promise.all([
+      fetch('/api/models'),
+      fetch('/api/problems'),
+    ]);
+    const mData = await mRes.json();
+    const pData = await pRes.json();
+    allModels = mData.models;
+    modelCategories = mData.categories;
+    allProblems = pData.problems;
+    modelsReady = true;
+    problemsReady = true;
+
+    // populate filters
+    const catSelect = document.getElementById('model-category');
+    if (catSelect) {
+      catSelect.innerHTML = '<option value="">全部类别</option>' +
+        modelCategories.map(c => `<option value="${c}">${c}</option>`).join('');
+    }
+    const probContest = document.getElementById('prob-contest');
+    if (probContest) {
+      probContest.innerHTML = '<option value="">全部竞赛</option>' +
+        pData.contests.map(c => `<option value="${c}">${c}</option>`).join('');
+    }
+    const probYear = document.getElementById('prob-year');
+    if (probYear) {
+      probYear.innerHTML = '<option value="">全部年份</option>' +
+        pData.years.map(y => `<option value="${y}">${y}</option>`).join('');
+    }
+  } catch (e) {
+    // Preload failed — tabs will load on demand with retry
+  }
+})();
+
+// ============================================================
+// Tab switching — now with eager rendering if data is ready
 // ============================================================
 const loadedTabs = {};
 
@@ -41,8 +86,14 @@ document.querySelectorAll('.nav-btn').forEach(btn => {
     if (!loadedTabs[tabName]) {
       loadedTabs[tabName] = true;
       switch (tabName) {
-        case 'models': loadModels(); break;
-        case 'problems': loadProblems(); break;
+        case 'models':
+          if (modelsReady) renderModelGrid(allModels);
+          else loadModels();
+          break;
+        case 'problems':
+          if (problemsReady) renderProblemList(allProblems);
+          else loadProblems();
+          break;
         case 'guide': loadGuide(); break;
         case 'roles': loadRoles(); break;
       }
@@ -58,11 +109,11 @@ function showToast(msg) {
   t.className = 'toast';
   t.textContent = msg;
   document.body.appendChild(t);
-  setTimeout(() => t.remove(), 2000);
+  setTimeout(() => t.remove(), 2200);
 }
 
 // ============================================================
-// Tab: Team Roles (lazy)
+// Tab: Team Roles
 // ============================================================
 async function loadRoles() {
   const container = document.getElementById('roles-content');
@@ -72,34 +123,34 @@ async function loadRoles() {
     const data = await res.json();
     container.innerHTML = marked.parse(data.content);
   } catch (e) {
-    container.innerHTML = '<p style="color:var(--red)">加载失败，请刷新重试</p>';
+    container.innerHTML = '<p class="error-msg">加载失败 <button class="btn-sm" onclick="loadedTabs.roles=false;loadRoles()">重试</button></p>';
   }
 }
 
 // ============================================================
 // Tab: Model Library
 // ============================================================
-let allModels = [];
-let modelCategories = [];
-
-async function loadModels() {
+async function loadModels(retry = false) {
   const grid = document.getElementById('model-grid');
-  grid.innerHTML = '<p class="model-card-empty"><span class="spinner spinner-dark"></span>加载模型库...</p>';
+  if (!retry) grid.innerHTML = '<div class="skeleton-grid">' + Array(6).fill('<div class="skeleton-card"></div>').join('') + '</div>';
 
   try {
     const res = await fetch('/api/models');
     const data = await res.json();
     allModels = data.models;
     modelCategories = data.categories;
+    modelsReady = true;
 
     const catSelect = document.getElementById('model-category');
-    catSelect.innerHTML = '<option value="">全部类别</option>' +
-      modelCategories.map(c => `<option value="${c}">${c}</option>`).join('');
+    if (catSelect && catSelect.options.length <= 1) {
+      catSelect.innerHTML = '<option value="">全部类别</option>' +
+        modelCategories.map(c => `<option value="${c}">${c}</option>`).join('');
+    }
 
     renderModelGrid(allModels);
     updateModelCount(allModels.length);
   } catch (e) {
-    grid.innerHTML = '<p class="model-card-empty" style="color:var(--red)">加载失败，请刷新重试</p>';
+    grid.innerHTML = `<p class="error-msg">加载失败 <button class="btn-sm" onclick="loadModels(true)">重试</button></p>`;
   }
 }
 
@@ -112,9 +163,9 @@ function getModelsFilters() {
 }
 
 function filterModels() {
+  if (!modelsReady) return;
   const { category, mcmType, difficulty, search } = getModelsFilters();
   let results = allModels;
-
   if (category) results = results.filter(m => m.category === category);
   if (mcmType) results = results.filter(m => m.mcm_type.includes(mcmType));
   if (difficulty) results = results.filter(m => m.difficulty === difficulty);
@@ -125,7 +176,6 @@ function filterModels() {
       m.tags.some(t => t.toLowerCase().includes(search))
     );
   }
-
   renderModelGrid(results);
   updateModelCount(results.length);
 }
@@ -141,13 +191,13 @@ function updateModelCount(n) {
 
 function renderModelGrid(models) {
   const grid = document.getElementById('model-grid');
-  if (models.length === 0) {
+  if (!models || models.length === 0) {
     grid.innerHTML = '<p class="model-card-empty">没有匹配的模型</p>';
     return;
   }
 
-  grid.innerHTML = models.map(m => `
-    <div class="model-card" data-name="${escapeHtml(m.name)}" onclick="showModelDetail('${escapeHtml(m.name)}')">
+  const html = models.map((m, i) => `
+    <div class="model-card" style="animation-delay:${i * 0.03}s" data-name="${escapeHtml(m.name)}" onclick="showModelDetail('${escapeHtml(m.name)}')">
       <div class="model-card-header">
         <span class="model-card-name">${escapeHtml(m.name)}</span>
         <span class="model-card-diff diff-${m.difficulty}">${m.difficulty}</span>
@@ -158,10 +208,13 @@ function renderModelGrid(models) {
         ${m.mcm_type.map(t => `<span class="tag tag-type">${t} 题</span>`).join('')}
       </div>
       <div class="model-card-libs">
-        ${m.python_libs.map(l => `<span class="tag tag-lib">${l}</span>`).join('')}
+        ${m.python_libs.slice(0, 3).map(l => `<span class="tag tag-lib">${l}</span>`).join('')}
+        ${m.python_libs.length > 3 ? `<span class="tag tag-lib">+${m.python_libs.length - 3}</span>` : ''}
       </div>
     </div>
   `).join('');
+
+  grid.innerHTML = html;
 }
 
 async function showModelDetail(name) {
@@ -170,9 +223,8 @@ async function showModelDetail(name) {
 
   const overlay = document.createElement('div');
   overlay.className = 'overlay';
-  overlay.innerHTML = '<div class="overlay-card"><p style="text-align:center;color:var(--text-secondary)">加载中...</p></div>';
+  overlay.innerHTML = '<div class="overlay-card"><div class="skeleton-card" style="height:200px"></div></div>';
   document.body.appendChild(overlay);
-
   overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
 
   try {
@@ -181,7 +233,7 @@ async function showModelDetail(name) {
     if (m.error) { overlay.remove(); return; }
 
     const codeBlock = m.code_example
-      ? `<h3>代码示例</h3><pre><code>${escapeHtml(m.code_example)}</code></pre>`
+      ? `<h3>代码示例 <button class="btn-sm" onclick="event.stopPropagation();navigator.clipboard.writeText(\`${m.code_example.replace(/`/g,'\\`').replace(/\$/g,'\\$')}\`);showToast('代码已复制')" style="margin-left:8px;font-size:11px">复制代码</button></h3><pre><code>${escapeHtml(m.code_example)}</code></pre>`
       : '';
 
     overlay.querySelector('.overlay-card').innerHTML = `
@@ -215,39 +267,43 @@ document.addEventListener('keydown', e => {
 // ============================================================
 // Tab: Real Problems
 // ============================================================
-let allProblems = [];
-
-async function loadProblems() {
+async function loadProblems(retry = false) {
   const list = document.getElementById('problem-list');
-  list.innerHTML = '<p class="empty-state"><span class="spinner spinner-dark"></span>加载真题库...</p>';
+  if (!retry) list.innerHTML = '<div class="skeleton-grid">' + Array(4).fill('<div class="skeleton-card"></div>').join('') + '</div>';
 
   try {
     const res = await fetch('/api/problems');
     const data = await res.json();
     allProblems = data.problems;
+    problemsReady = true;
 
-    document.getElementById('prob-contest').innerHTML = '<option value="">全部竞赛</option>' +
-      data.contests.map(c => `<option value="${c}">${c}</option>`).join('');
-    document.getElementById('prob-year').innerHTML = '<option value="">全部年份</option>' +
-      data.years.map(y => `<option value="${y}">${y}</option>`).join('');
+    const probContest = document.getElementById('prob-contest');
+    if (probContest && probContest.options.length <= 1) {
+      probContest.innerHTML = '<option value="">全部竞赛</option>' +
+        data.contests.map(c => `<option value="${c}">${c}</option>`).join('');
+    }
+    const probYear = document.getElementById('prob-year');
+    if (probYear && probYear.options.length <= 1) {
+      probYear.innerHTML = '<option value="">全部年份</option>' +
+        data.years.map(y => `<option value="${y}">${y}</option>`).join('');
+    }
 
     renderProblemList(allProblems);
     updateProblemCount(allProblems.length);
   } catch (e) {
-    list.innerHTML = '<p class="empty-state" style="color:var(--red)">加载失败，请刷新重试</p>';
+    list.innerHTML = `<p class="error-msg">加载失败 <button class="btn-sm" onclick="loadProblems(true)">重试</button></p>`;
   }
 }
 
 function filterProblems() {
+  if (!problemsReady) return;
   const contest = document.getElementById('prob-contest').value;
   const year = document.getElementById('prob-year').value;
   const type = document.getElementById('prob-type').value;
-
   let results = allProblems;
   if (contest) results = results.filter(p => p.contest === contest);
   if (year) results = results.filter(p => String(p.year) === year);
   if (type) results = results.filter(p => p.type === type);
-
   renderProblemList(results);
   updateProblemCount(results.length);
 }
@@ -262,15 +318,14 @@ function updateProblemCount(n) {
 
 function renderProblemList(problems) {
   const list = document.getElementById('problem-list');
-  if (problems.length === 0) {
+  if (!problems || problems.length === 0) {
     list.innerHTML = '<p class="empty-state">没有匹配的题目</p>';
     return;
   }
 
   const badgeClass = { MCM: 'badge-mcm', ICM: 'badge-icm', CUMCM: 'badge-cumcm' };
-
-  list.innerHTML = problems.map(p => `
-    <div class="problem-card" onclick="useProblem('${p.contest}', '${p.type}', '${p.category}', \`${p.description.replace(/`/g, '\\`')}\`, \`${(p.requirements || '').replace(/`/g, '\\`')}\`)">
+  list.innerHTML = problems.map((p, i) => `
+    <div class="problem-card" style="animation-delay:${i * 0.05}s" onclick="useProblem('${p.contest}', '${p.type}', '${p.category}', \`${p.description.replace(/`/g, '\\`')}\`, \`${(p.requirements || '').replace(/`/g, '\\`')}\`)">
       <div class="problem-card-top">
         <span class="problem-badge ${badgeClass[p.contest] || 'badge-mcm'}">${p.contest} ${p.type} 题</span>
         <span class="problem-year">${p.year}</span>
@@ -294,7 +349,6 @@ function useProblem(contest, type, category, description, requirements) {
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   document.querySelector('[data-tab="generator"]').classList.add('active');
   document.getElementById('tab-generator').classList.add('active');
-
   document.getElementById('tab-generator').scrollIntoView({ behavior: 'smooth' });
   showToast('题目已填入，可开始生成');
 }
@@ -310,7 +364,7 @@ async function loadGuide() {
     renderTools(data.tools);
     renderCodeStandards(data.code_standards);
   } catch (e) {
-    document.getElementById('timeline-container').innerHTML = '<p style="color:var(--red)">加载失败</p>';
+    document.getElementById('timeline-container').innerHTML = '<p class="error-msg">加载失败 <button class="btn-sm" onclick="loadedTabs.guide=false;loadGuide()">重试</button></p>';
   }
 }
 
@@ -349,11 +403,8 @@ function renderTools(tools) {
 
 function renderCodeStandards(standards) {
   const labels = {
-    structure: '文件结构',
-    naming: '命名规范',
-    comments: '代码注释',
-    reproducibility: '可复现性',
-    output: '输出规范',
+    structure: '文件结构', naming: '命名规范', comments: '代码注释',
+    reproducibility: '可复现性', output: '输出规范',
   };
   document.getElementById('code-standards-container').innerHTML = `
     <div class="standards-list">
@@ -395,16 +446,14 @@ generateBtn.addEventListener('click', async () => {
   const contestType = document.getElementById('contest-type').value;
   const problemType = document.getElementById('problem-type').value;
 
-  if (!problem) {
-    showToast('请先输入竞赛题目');
-    return;
-  }
+  if (!problem) { showToast('请先输入竞赛题目'); return; }
 
   setButtonsLoading(generateBtn, true);
   aiReportBtn.disabled = true;
   resultDiv.classList.add('visible');
-  resultContent.innerHTML = '<p style="color:var(--text-secondary)"><span class="spinner spinner-dark"></span>生成中...</p>';
+  resultContent.innerHTML = '<p class="streaming-hint"><span class="spinner spinner-dark"></span>正在生成论文方案...</p>';
   resultLabel.textContent = '生成结果';
+  resultDiv.scrollIntoView({ behavior: 'smooth' });
 
   let fullContent = '';
   let errorOccurred = false;
@@ -413,13 +462,7 @@ generateBtn.addEventListener('click', async () => {
     const res = await fetch('/api/generate/stream', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        problem,
-        requirements,
-        contest_type: contestType,
-        problem_type: problemType,
-        problem_category: mapProblemCategory(problemType),
-      }),
+      body: JSON.stringify({ problem, requirements, contest_type: contestType, problem_type: problemType, problem_category: mapProblemCategory(problemType) }),
     });
 
     if (!res.ok) {
@@ -430,6 +473,7 @@ generateBtn.addEventListener('click', async () => {
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
+    let chunkCount = 0;
 
     while (true) {
       const { done, value } = await reader.read();
@@ -442,50 +486,44 @@ generateBtn.addEventListener('click', async () => {
       for (const line of lines) {
         if (!line.startsWith('data: ')) continue;
         const data = line.slice(6);
-
         if (data === '[DONE]') continue;
-        if (data.startsWith('[ERROR]')) {
-          errorOccurred = true;
-          throw new Error(data.slice(8));
-        }
+        if (data.startsWith('[ERROR]')) { errorOccurred = true; throw new Error(data.slice(8)); }
 
         fullContent += data;
-        resultContent.innerHTML = marked.parse(fullContent);
-        resultContent.classList.add('streaming-cursor');
+        chunkCount++;
+        // Render progressively (debounce: every 10 chunks)
+        if (chunkCount % 10 === 0 || fullContent.length < 200) {
+          resultContent.innerHTML = marked.parse(fullContent) + '<span class="streaming-cursor"></span>';
+        }
       }
     }
 
-    resultContent.classList.remove('streaming-cursor');
+    // Final render
+    resultContent.innerHTML = marked.parse(fullContent);
     if (!errorOccurred && fullContent) {
-      resultContent.innerHTML = marked.parse(fullContent);
       saveHistory(problem, contestType, problemType, fullContent);
     }
   } catch (e) {
     if (!errorOccurred) {
-      resultContent.innerHTML = `<p style="color:var(--red)">生成失败: ${escapeHtml(e.message)}</p>`;
+      resultContent.innerHTML = `<p class="error-msg">生成失败: ${escapeHtml(e.message)} <button class="btn-sm" onclick="generateBtn.click()">重试</button></p>`;
     }
   } finally {
     setButtonsLoading(generateBtn, false);
     aiReportBtn.disabled = false;
-    resultContent.classList.remove('streaming-cursor');
-    resultDiv.scrollIntoView({ behavior: 'smooth' });
   }
 });
 
 // AI Use Report
 aiReportBtn.addEventListener('click', async () => {
   const problem = document.getElementById('problem').value.trim();
-
-  if (!problem) {
-    showToast('请先输入竞赛题目');
-    return;
-  }
+  if (!problem) { showToast('请先输入竞赛题目'); return; }
 
   setButtonsLoading(aiReportBtn, true);
   generateBtn.disabled = true;
-  resultDiv.classList.remove('visible');
-  resultContent.innerHTML = '';
+  resultDiv.classList.add('visible');
+  resultContent.innerHTML = '<p class="empty-state"><span class="spinner spinner-dark"></span>生成 AI 使用报告...</p>';
   resultLabel.textContent = 'AI 使用报告';
+  resultDiv.scrollIntoView({ behavior: 'smooth' });
 
   try {
     const res = await fetch('/api/ai-report', {
@@ -494,25 +532,21 @@ aiReportBtn.addEventListener('click', async () => {
       body: JSON.stringify({ problem }),
     });
     const data = await res.json();
-
     if (data.error) {
-      resultContent.innerHTML = `<p style="color:var(--red)">${escapeHtml(data.error)}</p>`;
+      resultContent.innerHTML = `<p class="error-msg">${escapeHtml(data.error)}</p>`;
     } else {
       resultContent.innerHTML = marked.parse(data.content);
     }
-    resultDiv.classList.add('visible');
   } catch (e) {
-    resultContent.innerHTML = '<p style="color:var(--red)">网络错误，请检查服务器是否运行</p>';
-    resultDiv.classList.add('visible');
+    resultContent.innerHTML = '<p class="error-msg">网络错误，请检查服务器是否运行 <button class="btn-sm" onclick="aiReportBtn.click()">重试</button></p>';
   } finally {
     setButtonsLoading(aiReportBtn, false);
     generateBtn.disabled = false;
-    resultDiv.scrollIntoView({ behavior: 'smooth' });
   }
 });
 
 // ============================================================
-// Download buttons
+// Copy & Download
 // ============================================================
 document.getElementById('copy-btn').addEventListener('click', () => {
   const text = resultContent.innerText;
@@ -527,70 +561,59 @@ function downloadFile(content, filename, mimeType) {
   const blob = new Blob([content], { type: mimeType });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
 
-// Add download buttons to toolbar
-const downloadMdBtn = document.createElement('button');
-downloadMdBtn.className = 'btn-sm';
-downloadMdBtn.textContent = '下载 .md';
-downloadMdBtn.addEventListener('click', () => {
-  const text = resultContent.innerText;
-  if (!text.trim()) { showToast('没有可下载的内容'); return; }
-  downloadFile(text, 'paper-framework.md', 'text/markdown;charset=utf-8');
-  showToast('已下载 Markdown 文件');
-});
+// Add download buttons dynamically
+(function addDownloadButtons() {
+  const actions = document.querySelector('.result-actions');
+  if (!actions) return;
 
-const downloadTexBtn = document.createElement('button');
-downloadTexBtn.className = 'btn-sm';
-downloadTexBtn.textContent = '下载 .tex';
-downloadTexBtn.addEventListener('click', async () => {
-  try {
-    const res = await fetch('/api/latex');
-    const data = await res.json();
-    if (data.content) {
-      downloadFile(data.content, 'paper-template.tex', 'application/x-tex;charset=utf-8');
-      showToast('已下载 LaTeX 模板');
-    }
-  } catch (e) {
-    showToast('下载失败');
-  }
-});
+  const mdBtn = document.createElement('button');
+  mdBtn.className = 'btn-sm'; mdBtn.textContent = '下载 .md';
+  mdBtn.addEventListener('click', () => {
+    const text = resultContent.innerText;
+    if (!text.trim()) { showToast('没有可下载的内容'); return; }
+    downloadFile(text, 'paper-framework.md', 'text/markdown;charset=utf-8');
+    showToast('已下载 Markdown 文件');
+  });
 
-document.querySelector('.result-actions').appendChild(downloadMdBtn);
-document.querySelector('.result-actions').appendChild(downloadTexBtn);
+  const texBtn = document.createElement('button');
+  texBtn.className = 'btn-sm'; texBtn.textContent = '下载 .tex';
+  texBtn.addEventListener('click', async () => {
+    try {
+      const res = await fetch('/api/latex');
+      const data = await res.json();
+      if (data.content) {
+        downloadFile(data.content, 'paper-template.tex', 'application/x-tex;charset=utf-8');
+        showToast('已下载 LaTeX 模板');
+      }
+    } catch (e) { showToast('下载失败'); }
+  });
 
-// Remove the old LaTeX button listener approach — we keep the button in toolbar
-// but update existing latex-btn to also trigger download
+  actions.appendChild(mdBtn);
+  actions.appendChild(texBtn);
+})();
+
+// LaTeX template viewer
 document.getElementById('latex-btn').addEventListener('click', async () => {
   const btn = document.getElementById('latex-btn');
-  const originalText = btn.textContent;
-  btn.textContent = '加载中...';
-  btn.disabled = true;
+  const orig = btn.textContent;
+  btn.textContent = '加载中...'; btn.disabled = true;
 
   try {
     const res = await fetch('/api/latex');
     const data = await res.json();
-
-    resultDiv.classList.remove('visible');
-    resultContent.innerHTML = '';
+    resultDiv.classList.add('visible');
+    resultContent.innerHTML = data.content ? `<pre><code>${escapeHtml(data.content)}</code></pre>` : '<p class="empty-state">暂无模板</p>';
     resultLabel.textContent = 'LaTeX 模板';
-
-    if (data.content) {
-      resultContent.innerHTML = `<pre><code>${escapeHtml(data.content)}</code></pre>`;
-      resultDiv.classList.add('visible');
-      resultDiv.scrollIntoView({ behavior: 'smooth' });
-    }
+    resultDiv.scrollIntoView({ behavior: 'smooth' });
   } catch (e) {
     showToast('加载 LaTeX 模板失败');
   } finally {
-    btn.textContent = originalText;
-    btn.disabled = false;
+    btn.textContent = orig; btn.disabled = false;
   }
 });
 
@@ -601,9 +624,8 @@ const HISTORY_KEY = 'mma-history';
 const MAX_HISTORY = 5;
 
 function getHistory() {
-  try {
-    return JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
-  } catch { return []; }
+  try { return JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]'); }
+  catch { return []; }
 }
 
 function saveHistory(problem, contestType, problemType, content) {
@@ -622,10 +644,8 @@ function saveHistory(problem, contestType, problemType, content) {
 
 function renderHistory() {
   const history = getHistory();
-  if (history.length === 0) {
-    historyCard.hidden = true;
-    return;
-  }
+  if (!historyCard || !historyList) return;
+  if (history.length === 0) { historyCard.hidden = true; return; }
 
   historyCard.hidden = false;
   historyList.innerHTML = history.map((h, i) => `
@@ -636,21 +656,16 @@ function renderHistory() {
       </div>
       <div class="history-item-meta">${h.contestType} · ${h.problemType} 题 · ${h.content.length} 字</div>
     </div>
-  `).join('');
-
-  // Add clear button
-  historyList.insertAdjacentHTML('beforeend', `
+  `).join('') + `
     <div class="history-actions">
-      <button class="btn-sm" onclick="event.stopPropagation(); clearHistory()">清除记录</button>
+      <button class="btn-sm" onclick="event.stopPropagation();clearHistory()">清除记录</button>
     </div>
-  `);
+  `;
 }
 
 function restoreHistory(index) {
-  const history = getHistory();
-  const item = history[index];
+  const item = getHistory()[index];
   if (!item) return;
-
   resultDiv.classList.add('visible');
   resultLabel.textContent = '历史记录';
   resultContent.innerHTML = marked.parse(item.content);
@@ -665,7 +680,6 @@ function clearHistory() {
   showToast('历史记录已清除');
 }
 
-// Load history on init
 renderHistory();
 
 // ============================================================
@@ -679,8 +693,7 @@ function escapeHtml(str) {
 // Keyboard shortcut: Cmd/Ctrl+Enter to generate
 document.addEventListener('keydown', e => {
   if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-    const genTab = document.getElementById('tab-generator');
-    if (genTab.classList.contains('active')) {
+    if (document.getElementById('tab-generator').classList.contains('active')) {
       generateBtn.click();
     }
   }
