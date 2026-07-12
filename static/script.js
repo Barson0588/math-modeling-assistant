@@ -65,6 +65,12 @@ let problemsReady = false;
       probYear.innerHTML = '<option value="">全部年份</option>' +
         pData.years.map(y => `<option value="${y}">${y}</option>`).join('');
     }
+
+    // Pre-render into the grid so it's ready when user switches tabs
+    renderModelGrid(allModels);
+    updateModelCount(allModels.length);
+    renderProblemListWithBookmarks(allProblems);
+    updateProblemCount(allProblems.length);
   } catch (e) {
     // Preload failed — tabs will load on demand with retry
   }
@@ -97,6 +103,10 @@ document.querySelectorAll('.nav-btn').forEach(btn => {
         case 'guide': loadGuide(); break;
         case 'roles': loadRoles(); break;
       }
+    } else {
+      // Re-entry: always re-render data tabs so filter state stays fresh
+      if (tabName === 'models' && modelsReady) renderModelGrid(allModels);
+      if (tabName === 'problems' && problemsReady) renderProblemListWithBookmarks(allProblems);
     }
   });
 });
