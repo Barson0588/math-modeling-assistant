@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Math Modeling Assistant</title>
+<link rel="stylesheet" href="/static/style.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400;14..32,500;14..32,600;14..32,700&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+<nav class="nav">
+  <div class="nav-inner">
+    <a href="#" class="logo">MMA</a>
+    <div class="nav-links">
+      <button class="nav-btn active" data-tab="generator">Paper Generator</button>
+      <button class="nav-btn" data-tab="roles">Team Roles</button>
+    </div>
+  </div>
+</nav>
+
+<main>
+  <!-- Generator Tab -->
+  <section id="tab-generator" class="tab active">
+    <div class="hero">
+      <h1>数学建模论文生成器</h1>
+      <p>输入竞赛题目，获取完整论文框架、数学转化思路与 Python 代码</p>
+    </div>
+
+    <div class="card input-card">
+      <div class="field">
+        <label for="problem">竞赛题目</label>
+        <textarea id="problem" rows="4" placeholder="粘贴完整题目描述..."></textarea>
+      </div>
+      <div class="field">
+        <label for="requirements">具体要求 <span class="hint">（可选）</span></label>
+        <textarea id="requirements" rows="2" placeholder="如：必须使用优化模型、需做敏感性分析..."></textarea>
+      </div>
+      <button id="generate-btn" class="btn-primary">
+        <span class="btn-text">生成方案</span>
+        <span class="btn-loading" hidden>生成中...</span>
+      </button>
+    </div>
+
+    <div id="result" class="card result-card" hidden>
+      <div class="result-toolbar">
+        <span class="result-label">生成结果</span>
+        <button id="copy-btn" class="btn-sm">复制全文</button>
+      </div>
+      <div id="result-content" class="markdown-body"></div>
+    </div>
+  </section>
+
+  <!-- Roles Tab -->
+  <section id="tab-roles" class="tab">
+    <div class="hero">
+      <h1>团队角色与职责</h1>
+      <p>数学建模竞赛中三位成员的分工与协作指南</p>
+    </div>
+    <div class="card">
+      <div id="roles-content" class="markdown-body"></div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <p>Math Modeling Assistant &middot; Powered by Claude</p>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script src="/static/script.js"></script>
+</body>
+</html>

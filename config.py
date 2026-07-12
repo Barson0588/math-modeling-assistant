@@ -1,0 +1,2 @@
+ANTHROPIC_API_KEY = "your-api-key-here"
+MODEL = "claude-sonnet-4-6"  # Best balance of quality & speed for math
