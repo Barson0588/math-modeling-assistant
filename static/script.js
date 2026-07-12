@@ -199,6 +199,12 @@ function updateModelCount(n) {
   document.getElementById('model-count').textContent = `共 ${n} 个模型`;
 }
 
+function ensureList(v) {
+  if (Array.isArray(v)) return v;
+  if (typeof v === 'string') return v.split(',').map(s => s.trim()).filter(Boolean);
+  return [];
+}
+
 function renderModelGrid(models) {
   const grid = document.getElementById('model-grid');
   if (!models || models.length === 0) {
@@ -206,7 +212,10 @@ function renderModelGrid(models) {
     return;
   }
 
-  const html = models.map((m, i) => `
+  const html = models.map((m, i) => {
+    const libs = ensureList(m.python_libs);
+    const types = ensureList(m.mcm_type);
+    return `
     <div class="model-card" style="animation-delay:${i * 0.03}s" data-name="${escapeHtml(m.name)}">
       <input type="checkbox" class="compare-checkbox" data-name="${escapeHtml(m.name)}" ${selectedModels.has(m.name) ? 'checked' : ''} onclick="toggleModelSelection('${escapeHtml(m.name).replace(/'/g, "\\'")}', event)">
       <div onclick="showModelDetail('${escapeHtml(m.name)}')">
@@ -217,15 +226,16 @@ function renderModelGrid(models) {
         <p class="model-card-summary">${escapeHtml(m.summary)}</p>
         <div class="model-card-tags">
           <span class="tag tag-category">${m.category}</span>
-          ${m.mcm_type.map(t => `<span class="tag tag-type">${t} 题</span>`).join('')}
+          ${types.map(t => `<span class="tag tag-type">${t} 题</span>`).join('')}
         </div>
         <div class="model-card-libs">
-          ${m.python_libs.slice(0, 3).map(l => `<span class="tag tag-lib">${l}</span>`).join('')}
-          ${m.python_libs.length > 3 ? `<span class="tag tag-lib">+${m.python_libs.length - 3}</span>` : ''}
+          ${libs.slice(0, 3).map(l => `<span class="tag tag-lib">${l}</span>`).join('')}
+          ${libs.length > 3 ? `<span class="tag tag-lib">+${libs.length - 3}</span>` : ''}
         </div>
       </div>
     </div>
-  `).join('');
+  `;
+  }).join('');
 
   grid.innerHTML = html;
 }
@@ -256,12 +266,12 @@ async function showModelDetail(name) {
       <h3>适用场景</h3>
       <p>${escapeHtml(m.when)}</p>
       <h3>Python 库</h3>
-      <div class="model-card-libs">${m.python_libs.map(l => `<span class="tag tag-lib">${l}</span>`).join('')}</div>
+      <div class="model-card-libs">${ensureList(m.python_libs).map(l => `<span class="tag tag-lib">${l}</span>`).join('')}</div>
       <h3>标签</h3>
       <div class="model-card-tags">
         <span class="tag tag-category">${m.category}</span>
-        ${m.tags.map(t => `<span class="tag tag-category">${t}</span>`).join('')}
-        ${m.mcm_type.map(t => `<span class="tag tag-type">${t} 题</span>`).join('')}
+        ${ensureList(m.tags).map(t => `<span class="tag tag-category">${t}</span>`).join('')}
+        ${ensureList(m.mcm_type).map(t => `<span class="tag tag-type">${t} 题</span>`).join('')}
       </div>
       ${codeBlock}
     `;
