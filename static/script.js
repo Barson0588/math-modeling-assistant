@@ -91,7 +91,7 @@ document.querySelectorAll('.nav-btn').forEach(btn => {
           else loadModels();
           break;
         case 'problems':
-          if (problemsReady) renderProblemList(allProblems);
+          if (problemsReady) renderProblemListWithBookmarks(allProblems);
           else loadProblems();
           break;
         case 'guide': loadGuide(); break;
@@ -197,19 +197,22 @@ function renderModelGrid(models) {
   }
 
   const html = models.map((m, i) => `
-    <div class="model-card" style="animation-delay:${i * 0.03}s" data-name="${escapeHtml(m.name)}" onclick="showModelDetail('${escapeHtml(m.name)}')">
-      <div class="model-card-header">
-        <span class="model-card-name">${escapeHtml(m.name)}</span>
-        <span class="model-card-diff diff-${m.difficulty}">${m.difficulty}</span>
-      </div>
-      <p class="model-card-summary">${escapeHtml(m.summary)}</p>
-      <div class="model-card-tags">
-        <span class="tag tag-category">${m.category}</span>
-        ${m.mcm_type.map(t => `<span class="tag tag-type">${t} 题</span>`).join('')}
-      </div>
-      <div class="model-card-libs">
-        ${m.python_libs.slice(0, 3).map(l => `<span class="tag tag-lib">${l}</span>`).join('')}
-        ${m.python_libs.length > 3 ? `<span class="tag tag-lib">+${m.python_libs.length - 3}</span>` : ''}
+    <div class="model-card" style="animation-delay:${i * 0.03}s" data-name="${escapeHtml(m.name)}">
+      <input type="checkbox" class="compare-checkbox" data-name="${escapeHtml(m.name)}" ${selectedModels.has(m.name) ? 'checked' : ''} onclick="toggleModelSelection('${escapeHtml(m.name).replace(/'/g, "\\'")}', event)">
+      <div onclick="showModelDetail('${escapeHtml(m.name)}')">
+        <div class="model-card-header">
+          <span class="model-card-name">${escapeHtml(m.name)}</span>
+          <span class="model-card-diff diff-${m.difficulty}">${m.difficulty}</span>
+        </div>
+        <p class="model-card-summary">${escapeHtml(m.summary)}</p>
+        <div class="model-card-tags">
+          <span class="tag tag-category">${m.category}</span>
+          ${m.mcm_type.map(t => `<span class="tag tag-type">${t} 题</span>`).join('')}
+        </div>
+        <div class="model-card-libs">
+          ${m.python_libs.slice(0, 3).map(l => `<span class="tag tag-lib">${l}</span>`).join('')}
+          ${m.python_libs.length > 3 ? `<span class="tag tag-lib">+${m.python_libs.length - 3}</span>` : ''}
+        </div>
       </div>
     </div>
   `).join('');
@@ -288,54 +291,15 @@ async function loadProblems(retry = false) {
         data.years.map(y => `<option value="${y}">${y}</option>`).join('');
     }
 
-    renderProblemList(allProblems);
+    renderProblemListWithBookmarks(allProblems);
     updateProblemCount(allProblems.length);
   } catch (e) {
     list.innerHTML = `<p class="error-msg">加载失败 <button class="btn-sm" onclick="loadProblems(true)">重试</button></p>`;
   }
 }
 
-function filterProblems() {
-  if (!problemsReady) return;
-  const contest = document.getElementById('prob-contest').value;
-  const year = document.getElementById('prob-year').value;
-  const type = document.getElementById('prob-type').value;
-  let results = allProblems;
-  if (contest) results = results.filter(p => p.contest === contest);
-  if (year) results = results.filter(p => String(p.year) === year);
-  if (type) results = results.filter(p => p.type === type);
-  renderProblemList(results);
-  updateProblemCount(results.length);
-}
-
-document.getElementById('prob-contest').addEventListener('change', filterProblems);
-document.getElementById('prob-year').addEventListener('change', filterProblems);
-document.getElementById('prob-type').addEventListener('change', filterProblems);
-
 function updateProblemCount(n) {
   document.getElementById('prob-count').textContent = `共 ${n} 道真题`;
-}
-
-function renderProblemList(problems) {
-  const list = document.getElementById('problem-list');
-  if (!problems || problems.length === 0) {
-    list.innerHTML = '<p class="empty-state">没有匹配的题目</p>';
-    return;
-  }
-
-  const badgeClass = { MCM: 'badge-mcm', ICM: 'badge-icm', CUMCM: 'badge-cumcm' };
-  list.innerHTML = problems.map((p, i) => `
-    <div class="problem-card" style="animation-delay:${i * 0.05}s" onclick="useProblem('${p.contest}', '${p.type}', '${p.category}', \`${p.description.replace(/`/g, '\\`')}\`, \`${(p.requirements || '').replace(/`/g, '\\`')}\`)">
-      <div class="problem-card-top">
-        <span class="problem-badge ${badgeClass[p.contest] || 'badge-mcm'}">${p.contest} ${p.type} 题</span>
-        <span class="problem-year">${p.year}</span>
-        <span style="font-size:12px;color:var(--text-secondary)">${p.category}</span>
-      </div>
-      <h3>${escapeHtml(p.title)}</h3>
-      <p>${escapeHtml(p.description)}</p>
-      <p class="hint-action">点击填入生成器 →</p>
-    </div>
-  `).join('');
 }
 
 function useProblem(contest, type, category, description, requirements) {
@@ -494,12 +458,14 @@ generateBtn.addEventListener('click', async () => {
         // Render progressively (debounce: every 10 chunks)
         if (chunkCount % 10 === 0 || fullContent.length < 200) {
           resultContent.innerHTML = marked.parse(fullContent) + '<span class="streaming-cursor"></span>';
+          injectCodeCopyButtons(resultContent);
         }
       }
     }
 
     // Final render
     resultContent.innerHTML = marked.parse(fullContent);
+    injectCodeCopyButtons(resultContent);
     if (!errorOccurred && fullContent) {
       saveHistory(problem, contestType, problemType, fullContent);
     }
@@ -536,6 +502,7 @@ aiReportBtn.addEventListener('click', async () => {
       resultContent.innerHTML = `<p class="error-msg">${escapeHtml(data.error)}</p>`;
     } else {
       resultContent.innerHTML = marked.parse(data.content);
+      injectCodeCopyButtons(resultContent);
     }
   } catch (e) {
     resultContent.innerHTML = '<p class="error-msg">网络错误，请检查服务器是否运行 <button class="btn-sm" onclick="aiReportBtn.click()">重试</button></p>';
@@ -669,6 +636,7 @@ function restoreHistory(index) {
   resultDiv.classList.add('visible');
   resultLabel.textContent = '历史记录';
   resultContent.innerHTML = marked.parse(item.content);
+  injectCodeCopyButtons(resultContent);
   resultDiv.scrollIntoView({ behavior: 'smooth' });
   showToast('已恢复历史生成结果');
 }
@@ -689,6 +657,183 @@ function escapeHtml(str) {
   if (!str) return '';
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
+
+// ============================================================
+// Inject copy buttons into code blocks (called after render)
+// ============================================================
+function injectCodeCopyButtons(container) {
+  container.querySelectorAll('pre').forEach(pre => {
+    if (pre.closest('.code-block-wrapper')) return; // already wrapped
+    const wrapper = document.createElement('div');
+    wrapper.className = 'code-block-wrapper';
+    pre.parentNode.insertBefore(wrapper, pre);
+    wrapper.appendChild(pre);
+    const btn = document.createElement('button');
+    btn.className = 'code-copy-btn';
+    btn.textContent = '复制';
+    btn.addEventListener('click', () => {
+      const code = pre.querySelector('code') ? pre.querySelector('code').innerText : pre.innerText;
+      navigator.clipboard.writeText(code).then(() => {
+        btn.textContent = '已复制';
+        setTimeout(() => btn.textContent = '复制', 1500);
+      });
+    });
+    wrapper.appendChild(btn);
+  });
+}
+
+// ============================================================
+// Model Comparison
+// ============================================================
+const selectedModels = new Set();
+const compareBar = document.getElementById('compare-bar');
+const compareCount = document.getElementById('compare-count');
+
+function updateCompareBar() {
+  if (selectedModels.size > 0) {
+    compareBar.hidden = false;
+    compareCount.textContent = `已选 ${selectedModels.size} 个模型（最多 3 个）`;
+  } else {
+    compareBar.hidden = true;
+  }
+  // update checkbox states in the grid
+  document.querySelectorAll('.compare-checkbox').forEach(cb => {
+    cb.checked = selectedModels.has(cb.dataset.name);
+    cb.closest('.model-card')?.classList.toggle('selected', cb.checked);
+  });
+}
+
+function toggleModelSelection(name, e) {
+  e.stopPropagation();
+  if (selectedModels.has(name)) {
+    selectedModels.delete(name);
+  } else {
+    if (selectedModels.size >= 3) {
+      showToast('最多对比 3 个模型');
+      return;
+    }
+    selectedModels.add(name);
+  }
+  updateCompareBar();
+}
+
+document.getElementById('compare-clear-btn').addEventListener('click', () => {
+  selectedModels.clear();
+  updateCompareBar();
+});
+
+document.getElementById('compare-btn').addEventListener('click', () => {
+  if (selectedModels.size < 2) { showToast('请至少选择 2 个模型进行对比'); return; }
+  showCompareOverlay([...selectedModels]);
+});
+
+function showCompareOverlay(names) {
+  const existing = document.querySelector('.overlay');
+  if (existing) existing.remove();
+
+  const models = allModels.filter(m => names.includes(m.name));
+
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay compare-overlay';
+  overlay.innerHTML = `
+    <div class="overlay-card">
+      <button class="overlay-close" onclick="this.closest('.overlay').remove()">&times;</button>
+      <h2>模型对比</h2>
+      <div class="compare-grid">
+        ${models.map(m => `
+          <div class="compare-col">
+            <h3>${escapeHtml(m.name)} <span class="model-card-diff diff-${m.difficulty}">${m.difficulty}</span></h3>
+            <div class="compare-row"><div class="compare-label">类别</div><div class="compare-value">${m.category}</div></div>
+            <div class="compare-row"><div class="compare-label">原理</div><div class="compare-value">${escapeHtml(m.summary)}</div></div>
+            <div class="compare-row"><div class="compare-label">适用场景</div><div class="compare-value">${escapeHtml(m.when)}</div></div>
+            <div class="compare-row"><div class="compare-label">题型</div><div class="compare-value">${m.mcm_type.join(', ')} 题</div></div>
+            <div class="compare-row"><div class="compare-label">Python 库</div><div class="compare-value" style="font-family:var(--mono);font-size:12px">${m.python_libs.join(', ')}</div></div>
+            ${m.code_example ? `<div class="compare-row"><div class="compare-label">代码示例</div><pre><code>${escapeHtml(m.code_example)}</code></pre></div>` : ''}
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+}
+
+// ============================================================
+// Problem Bookmarks
+// ============================================================
+const BOOKMARK_KEY = 'mma-bookmarks';
+
+function getBookmarks() {
+  try { return new Set(JSON.parse(localStorage.getItem(BOOKMARK_KEY) || '[]')); }
+  catch { return new Set(); }
+}
+
+function toggleBookmark(problemId, e) {
+  e.stopPropagation();
+  const bookmarks = getBookmarks();
+  if (bookmarks.has(problemId)) bookmarks.delete(problemId);
+  else bookmarks.add(problemId);
+  localStorage.setItem(BOOKMARK_KEY, JSON.stringify([...bookmarks]));
+  if (problemsReady) {
+    const activeFilter = document.getElementById('prob-bookmark-filter').classList.contains('active');
+    if (activeFilter) filterProblems();
+    else renderProblemListWithBookmarks(allProblems);
+  }
+}
+
+let bookmarkFilterActive = false;
+document.getElementById('prob-bookmark-filter').addEventListener('click', function() {
+  bookmarkFilterActive = !bookmarkFilterActive;
+  this.classList.toggle('active', bookmarkFilterActive);
+  if (problemsReady) filterProblems();
+});
+
+function filterProblems() {
+  if (!problemsReady) return;
+  const contest = document.getElementById('prob-contest').value;
+  const year = document.getElementById('prob-year').value;
+  const type = document.getElementById('prob-type').value;
+  let results = allProblems;
+  if (contest) results = results.filter(p => p.contest === contest);
+  if (year) results = results.filter(p => String(p.year) === year);
+  if (type) results = results.filter(p => p.type === type);
+  if (bookmarkFilterActive) {
+    const bookmarks = getBookmarks();
+    results = results.filter(p => bookmarks.has(p.title));
+  }
+  renderProblemListWithBookmarks(results);
+  updateProblemCount(results.length);
+}
+
+function renderProblemListWithBookmarks(problems) {
+  const list = document.getElementById('problem-list');
+  if (!problems || problems.length === 0) {
+    list.innerHTML = '<p class="empty-state">没有匹配的题目</p>';
+    return;
+  }
+
+  const bookmarks = getBookmarks();
+  const badgeClass = { MCM: 'badge-mcm', ICM: 'badge-icm', CUMCM: 'badge-cumcm' };
+  list.innerHTML = problems.map((p, i) => `
+    <div class="problem-card" style="animation-delay:${i * 0.05}s">
+      <div class="problem-card-top">
+        <span class="problem-badge ${badgeClass[p.contest] || 'badge-mcm'}">${p.contest} ${p.type} 题</span>
+        <span class="problem-year">${p.year}</span>
+        <span style="font-size:12px;color:var(--text-secondary)">${p.category}</span>
+        <button class="bookmark-btn ${bookmarks.has(p.title) ? 'bookmarked' : ''}" onclick="toggleBookmark('${p.title.replace(/'/g, "\\'")}', event)" title="收藏">${bookmarks.has(p.title) ? '★' : '☆'}</button>
+        <span style="flex:1"></span>
+        <span class="hint-action" style="cursor:pointer" onclick="useProblem('${p.contest}', '${p.type}', '${p.category}', \`${p.description.replace(/`/g, '\\`')}\`, \`${(p.requirements || '').replace(/`/g, '\\`')}\`)">点击填入 →</span>
+      </div>
+      <h3 style="cursor:pointer" onclick="useProblem('${p.contest}', '${p.type}', '${p.category}', \`${p.description.replace(/`/g, '\\`')}\`, \`${(p.requirements || '').replace(/`/g, '\\`')}\`)">${escapeHtml(p.title)}</h3>
+      <p style="cursor:pointer" onclick="useProblem('${p.contest}', '${p.type}', '${p.category}', \`${p.description.replace(/`/g, '\\`')}\`, \`${(p.requirements || '').replace(/`/g, '\\`')}\`)">${escapeHtml(p.description)}</p>
+    </div>
+  `).join('');
+}
+
+// Print / PDF
+document.getElementById('print-btn').addEventListener('click', () => {
+  window.print();
+});
 
 // Keyboard shortcut: Cmd/Ctrl+Enter to generate
 document.addEventListener('keydown', e => {

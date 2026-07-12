@@ -84,6 +84,7 @@
       <span class="result-label" id="result-label">生成结果</span>
       <div class="result-actions">
         <button id="copy-btn" class="btn-sm">复制全文</button>
+        <button id="print-btn" class="btn-sm">打印 / PDF</button>
         <button id="latex-btn" class="btn-sm">LaTeX 模板</button>
       </div>
     </div>
@@ -130,6 +131,15 @@
     <div id="model-count" class="filter-hint"></div>
     <div id="model-grid" class="model-grid"></div>
   </div>
+
+  <!-- Comparison floating bar -->
+  <div id="compare-bar" class="compare-bar" hidden>
+    <span id="compare-count">已选 0 个模型</span>
+    <div class="compare-actions">
+      <button id="compare-clear-btn" class="btn-sm">清空</button>
+      <button id="compare-btn" class="btn-primary">对比选中模型</button>
+    </div>
+  </div>
 </section>
 
 <!-- ============ TAB 3: Real Problems ============ -->
@@ -156,6 +166,7 @@
         <option value="E">E 题</option>
         <option value="F">F 题</option>
       </select>
+      <button id="prob-bookmark-filter" class="btn-sm bookmark-filter">★ 已收藏</button>
     </div>
     <div id="prob-count" class="filter-hint"></div>
     <div id="problem-list" class="problem-list"></div>
