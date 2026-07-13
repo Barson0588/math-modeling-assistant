@@ -11,7 +11,7 @@ PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$PROJECT_DIR"
 
 APP_NAME="MathModelingAssistant"
-VERSION="1.0.0"
+VERSION="1.1.0"
 DMG_NAME="${APP_NAME}-${VERSION}"
 BUILD_DIR="$PROJECT_DIR/build"
 DIST_DIR="$PROJECT_DIR/dist"

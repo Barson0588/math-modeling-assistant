@@ -8,7 +8,7 @@
 
 ### macOS
 
-[**下载 MathModelingAssistant-1.0.0.dmg**](https://github.com/chengfengyi-falcon/math-modeling-assistant/releases/download/v1.0.0/MathModelingAssistant-1.0.0.dmg)
+[**下载 MathModelingAssistant.dmg (v1.1.0)**](https://github.com/chengfengyi-falcon/math-modeling-assistant/releases/download/v1.1.0/MathModelingAssistant-1.0.0.dmg)
 
 1. 下载 DMG，双击打开，将 `MathModelingAssistant.app` 拖入 `Applications`
 2. 首次启动时，应用会自动打开配置文件，填入 [DeepSeek API Key](https://platform.deepseek.com/api_keys) 后重启应用
