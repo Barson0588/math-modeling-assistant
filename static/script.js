@@ -77,6 +77,33 @@ let problemsReady = false;
 })();
 
 // ============================================================
+// Quick Start Onboarding
+// ============================================================
+const ONBOARDING_KEY = 'mma-onboarding-done';
+const onboardingDone = localStorage.getItem(ONBOARDING_KEY);
+if (!onboardingDone) {
+  const banner = document.createElement('div');
+  banner.className = 'onboarding-banner';
+  banner.id = 'onboarding-banner';
+  banner.innerHTML = `
+    <div class="onboarding-steps">
+      <div class="onboarding-step done"><span class="step-num">1</span> 选择竞赛 & 题型</div>
+      <div class="onboarding-arrow">→</div>
+      <div class="onboarding-step"><span class="step-num">2</span> 粘贴题目描述</div>
+      <div class="onboarding-arrow">→</div>
+      <div class="onboarding-step"><span class="step-num">3</span> 点击生成论文方案</div>
+    </div>
+    <button class="onboarding-close" id="onboarding-dismiss">知道了</button>
+  `;
+  document.getElementById('tab-generator').insertBefore(banner, document.getElementById('tab-generator').firstChild);
+  document.getElementById('onboarding-dismiss').addEventListener('click', () => {
+    banner.style.animation = 'fadeOut .3s ease forwards';
+    setTimeout(() => banner.remove(), 300);
+    localStorage.setItem(ONBOARDING_KEY, '1');
+  });
+}
+
+// ============================================================
 // Tab switching — now with eager rendering if data is ready
 // ============================================================
 const loadedTabs = {};
@@ -176,6 +203,8 @@ function filterModels() {
   if (!modelsReady) return;
   const { category, mcmType, difficulty, search } = getModelsFilters();
   let results = allModels;
+  const hasActiveFilter = category || mcmType || difficulty || search;
+
   if (category) results = results.filter(m => m.category === category);
   if (mcmType) results = results.filter(m => m.mcm_type.includes(mcmType));
   if (difficulty) results = results.filter(m => m.difficulty === difficulty);
@@ -186,7 +215,21 @@ function filterModels() {
       m.tags.some(t => t.toLowerCase().includes(search))
     );
   }
-  renderModelGrid(results);
+
+  // When a problem type filter is active, boost matching models with a "推荐" flag
+  if (mcmType) {
+    results = results.map(m => ({ ...m, _recommended: true }));
+  }
+
+  // Sort: recommended first, then by difficulty (入门 → 进阶)
+  const diffOrder = { '入门': 0, '简单': 1, '中等': 2, '进阶': 3 };
+  results.sort((a, b) => {
+    if (a._recommended && !b._recommended) return -1;
+    if (!a._recommended && b._recommended) return 1;
+    return (diffOrder[a.difficulty] || 99) - (diffOrder[b.difficulty] || 99);
+  });
+
+  renderModelGrid(results, hasActiveFilter);
   updateModelCount(results.length);
 }
 
@@ -205,7 +248,7 @@ function ensureList(v) {
   return [];
 }
 
-function renderModelGrid(models) {
+function renderModelGrid(models, hasActiveFilter = false) {
   const grid = document.getElementById('model-grid');
   if (!models || models.length === 0) {
     grid.innerHTML = '<p class="model-card-empty">没有匹配的模型</p>';
@@ -215,9 +258,11 @@ function renderModelGrid(models) {
   const html = models.map((m, i) => {
     const libs = ensureList(m.python_libs);
     const types = ensureList(m.mcm_type);
+    const isRecommended = m._recommended && hasActiveFilter;
     return `
-    <div class="model-card" style="animation-delay:${i * 0.03}s" data-name="${escapeHtml(m.name)}">
+    <div class="model-card${isRecommended ? ' model-card-recommended' : ''}" style="animation-delay:${i * 0.03}s" data-name="${escapeHtml(m.name)}">
       <input type="checkbox" class="compare-checkbox" data-name="${escapeHtml(m.name)}" ${selectedModels.has(m.name) ? 'checked' : ''} onclick="toggleModelSelection('${escapeHtml(m.name).replace(/'/g, "\\'")}', event)">
+      ${isRecommended ? '<span class="tag tag-recommended">推荐</span>' : ''}
       <div onclick="showModelDetail('${escapeHtml(m.name)}')">
         <div class="model-card-header">
           <span class="model-card-name">${escapeHtml(m.name)}</span>
@@ -280,12 +325,77 @@ async function showModelDetail(name) {
   }
 }
 
+// Global keyboard shortcuts (except when typing in inputs)
 document.addEventListener('keydown', e => {
+  const tag = document.activeElement?.tagName;
+  const isInput = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || document.activeElement?.isContentEditable;
+
+  // Escape: close overlays
   if (e.key === 'Escape') {
     const overlay = document.querySelector('.overlay');
-    if (overlay) overlay.remove();
+    if (overlay) { overlay.remove(); return; }
+  }
+
+  // Ctrl+Enter / Cmd+Enter: generate (works even when typing in problem textarea)
+  if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+    e.preventDefault();
+    if (document.getElementById('tab-generator').classList.contains('active')) {
+      generateBtn.click();
+    }
+    return;
+  }
+
+  // Don't trigger shortcuts when user is typing
+  if (isInput) return;
+
+  // Ctrl/Cmd+1-5: switch tabs
+  const tabKeys = { '1': 'generator', '2': 'models', '3': 'problems', '4': 'guide', '5': 'roles' };
+  if ((e.metaKey || e.ctrlKey) && tabKeys[e.key]) {
+    e.preventDefault();
+    const btn = document.querySelector(`[data-tab="${tabKeys[e.key]}"]`);
+    if (btn) btn.click();
+    return;
+  }
+
+  // Ctrl/Cmd+K: focus search
+  if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+    e.preventDefault();
+    const activeTab = document.querySelector('.tab.active');
+    if (activeTab) {
+      const search = activeTab.querySelector('.search-input') || activeTab.querySelector('input[type="text"]');
+      if (search) search.focus();
+    }
+    return;
+  }
+
+  // ?: show keyboard shortcuts
+  if (e.key === '?') {
+    showShortcuts();
+    return;
   }
 });
+
+function showShortcuts() {
+  const existing = document.querySelector('.shortcuts-overlay');
+  if (existing) { existing.remove(); return; }
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay shortcuts-overlay';
+  overlay.innerHTML = `
+    <div class="overlay-card shortcuts-card">
+      <button class="overlay-close" onclick="this.closest('.overlay').remove()">&times;</button>
+      <h2>键盘快捷键</h2>
+      <div class="shortcuts-grid">
+        <div class="shortcut-row"><kbd>Ctrl + Enter</kbd><span>生成论文方案</span></div>
+        <div class="shortcut-row"><kbd>Ctrl + 1-5</kbd><span>切换标签页</span></div>
+        <div class="shortcut-row"><kbd>Ctrl + K</kbd><span>聚焦搜索框</span></div>
+        <div class="shortcut-row"><kbd>Esc</kbd><span>关闭弹窗</span></div>
+        <div class="shortcut-row"><kbd>?</kbd><span>显示此帮助</span></div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+}
 
 // ============================================================
 // Tab: Real Problems
@@ -486,8 +596,10 @@ generateBtn.addEventListener('click', async () => {
     // Final render
     resultContent.innerHTML = marked.parse(fullContent);
     injectCodeCopyButtons(resultContent);
+    buildTOC(resultContent);
     if (!errorOccurred && fullContent) {
       saveHistory(problem, contestType, problemType, fullContent);
+      saveDraft(problem, contestType, problemType, fullContent);
     }
   } catch (e) {
     if (!errorOccurred) {
@@ -523,6 +635,7 @@ aiReportBtn.addEventListener('click', async () => {
     } else {
       resultContent.innerHTML = marked.parse(data.content);
       injectCodeCopyButtons(resultContent);
+      buildTOC(resultContent);
     }
   } catch (e) {
     resultContent.innerHTML = '<p class="error-msg">网络错误，请检查服务器是否运行 <button class="btn-sm" onclick="aiReportBtn.click()">重试</button></p>';
@@ -657,6 +770,7 @@ function restoreHistory(index) {
   resultLabel.textContent = '历史记录';
   resultContent.innerHTML = marked.parse(item.content);
   injectCodeCopyButtons(resultContent);
+  buildTOC(resultContent);
   resultDiv.scrollIntoView({ behavior: 'smooth' });
   showToast('已恢复历史生成结果');
 }
@@ -671,11 +785,127 @@ function clearHistory() {
 renderHistory();
 
 // ============================================================
+// Session Restore — auto-save draft to survive page refresh
+// ============================================================
+const DRAFT_KEY = 'mma-draft';
+
+function saveDraft(problem, contestType, problemType, content) {
+  localStorage.setItem(DRAFT_KEY, JSON.stringify({
+    problem, contestType, problemType, content,
+    time: new Date().toLocaleString('zh-CN'),
+  }));
+}
+
+function clearDraft() {
+  localStorage.removeItem(DRAFT_KEY);
+  const banner = document.getElementById('draft-restore-banner');
+  if (banner) banner.remove();
+}
+
+function checkDraft() {
+  try {
+    const raw = localStorage.getItem(DRAFT_KEY);
+    if (!raw) return;
+    const draft = JSON.parse(raw);
+    if (!draft.content) return;
+
+    const banner = document.createElement('div');
+    banner.className = 'draft-banner';
+    banner.id = 'draft-restore-banner';
+    banner.innerHTML = `
+      <span>上次生成结果尚未查看（${draft.time}）</span>
+      <button class="btn-sm" id="draft-restore-btn">恢复结果</button>
+      <button class="btn-sm" id="draft-dismiss-btn">忽略</button>
+    `;
+    const hero = document.querySelector('#tab-generator .hero');
+    hero.insertAdjacentElement('afterend', banner);
+
+    document.getElementById('draft-restore-btn').addEventListener('click', () => {
+      document.getElementById('problem').value = draft.problem || '';
+      document.getElementById('requirements').value = '';
+      document.getElementById('contest-type').value = draft.contestType || 'MCM/ICM';
+      document.getElementById('problem-type').value = draft.problemType || 'A';
+      resultDiv.classList.add('visible');
+      resultLabel.textContent = '恢复的结果';
+      resultContent.innerHTML = marked.parse(draft.content);
+      injectCodeCopyButtons(resultContent);
+      buildTOC(resultContent);
+      resultDiv.scrollIntoView({ behavior: 'smooth' });
+      banner.remove();
+      showToast('已恢复上次生成结果');
+    });
+
+    document.getElementById('draft-dismiss-btn').addEventListener('click', () => {
+      clearDraft();
+      showToast('草稿已清除');
+    });
+  } catch (e) {
+    localStorage.removeItem(DRAFT_KEY);
+  }
+}
+
+// Check for saved draft on page load
+checkDraft();
+
+// ============================================================
 // Utilities
 // ============================================================
 function escapeHtml(str) {
   if (!str) return '';
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// ============================================================
+// TOC — floating table of contents for generated results
+// ============================================================
+let tocObserver = null;
+
+function buildTOC(container) {
+  // Remove old TOC
+  const old = document.querySelector('.toc-sidebar');
+  if (old) old.remove();
+  if (tocObserver) { tocObserver.disconnect(); tocObserver = null; }
+
+  const headings = container.querySelectorAll('h1, h2, h3');
+  if (headings.length < 3) return;
+
+  const toc = document.createElement('nav');
+  toc.className = 'toc-sidebar';
+
+  const title = document.createElement('div');
+  title.className = 'toc-title';
+  title.textContent = '目录';
+  toc.appendChild(title);
+
+  const items = [];
+  headings.forEach((h, i) => {
+    const id = 'section-' + i;
+    h.id = id;
+    const item = document.createElement('a');
+    item.className = 'toc-item toc-' + h.tagName.toLowerCase();
+    item.href = '#' + id;
+    item.textContent = h.textContent;
+    item.addEventListener('click', e => {
+      e.preventDefault();
+      h.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+    toc.appendChild(item);
+    items.push({ el: item, heading: h });
+  });
+
+  document.body.appendChild(toc);
+
+  // Scroll spy
+  tocObserver = new IntersectionObserver(entries => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        items.forEach(({ el }) => el.classList.remove('toc-active'));
+        const match = items.find(({ heading }) => heading === entry.target);
+        if (match) match.el.classList.add('toc-active');
+      }
+    });
+  }, { rootMargin: '-80px 0px -70% 0px' });
+  headings.forEach(h => tocObserver.observe(h));
 }
 
 // ============================================================
@@ -855,11 +1085,4 @@ document.getElementById('print-btn').addEventListener('click', () => {
   window.print();
 });
 
-// Keyboard shortcut: Cmd/Ctrl+Enter to generate
-document.addEventListener('keydown', e => {
-  if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-    if (document.getElementById('tab-generator').classList.contains('active')) {
-      generateBtn.click();
-    }
-  }
-});
+// Keyboard shortcuts handled in unified handler above (line ~330)

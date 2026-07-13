@@ -636,20 +636,179 @@ footer { text-align: center; padding: 24px; color: var(--text-secondary); font-s
 }
 
 /* ============================================================
-   Responsive
+   Model recommendation badge
+   ============================================================ */
+.model-card-recommended {
+  border-color: var(--amber);
+  box-shadow: 0 0 0 1px var(--amber-light);
+}
+.tag-recommended {
+  position: absolute; top: 10px; left: 12px;
+  background: var(--amber); color: #fff;
+  font-size: 10px; font-weight: 700; padding: 2px 6px;
+  border-radius: 4px; z-index: 3; letter-spacing: .05em;
+}
+
+/* ============================================================
+   Onboarding banner
+   ============================================================ */
+.onboarding-banner {
+  background: linear-gradient(135deg, var(--accent-light), var(--purple-light));
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  padding: 16px 20px;
+  margin-bottom: 24px;
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 16px; flex-wrap: wrap;
+  animation: fadeSlideIn .4s ease;
+}
+.onboarding-steps { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.onboarding-step {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 13px; font-weight: 500; color: var(--text-secondary);
+}
+.onboarding-step.done { color: var(--text); }
+.onboarding-step .step-num {
+  width: 22px; height: 22px; border-radius: 50%;
+  background: var(--accent); color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 700;
+}
+.onboarding-step.done .step-num { background: var(--green); }
+.onboarding-arrow { color: var(--border); font-size: 14px; }
+.onboarding-close {
+  padding: 6px 16px; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--surface); color: var(--text); cursor: pointer;
+  font: 500 13px var(--font); transition: all var(--transition);
+}
+.onboarding-close:hover { border-color: var(--accent); color: var(--accent); }
+
+/* ============================================================
+   Draft restore banner
+   ============================================================ */
+.draft-banner {
+  background: var(--surface); border: 1px solid var(--accent);
+  border-radius: var(--radius); padding: 14px 20px;
+  margin-bottom: 20px;
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  font-size: 14px; animation: fadeSlideIn .3s ease;
+}
+.draft-banner span { flex: 1; min-width: 200px; }
+.draft-banner .btn-sm { white-space: nowrap; }
+
+/* ============================================================
+   TOC sidebar
+   ============================================================ */
+.toc-sidebar {
+  position: fixed; right: max(16px, calc((100vw - 960px) / 2 - 220px));
+  top: 100px; width: 200px; max-height: calc(100vh - 140px);
+  overflow-y: auto; z-index: 40;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 16px;
+  font-size: 12px; line-height: 1.6;
+  box-shadow: var(--shadow);
+  animation: fadeSlideIn .3s ease;
+}
+.toc-title {
+  font-weight: 700; font-size: 11px; text-transform: uppercase;
+  letter-spacing: .08em; color: var(--text-secondary);
+  margin-bottom: 10px; padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+.toc-item {
+  display: block; padding: 2px 0; color: var(--text-secondary);
+  text-decoration: none; border-radius: 2px;
+  transition: all var(--transition);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.toc-item:hover { color: var(--accent); }
+.toc-item.toc-active { color: var(--accent); font-weight: 600; }
+.toc-h2 { padding-left: 0; }
+.toc-h3 { padding-left: 12px; font-size: 11px; }
+
+@media (max-width: 1280px) {
+  .toc-sidebar { display: none; }
+}
+
+/* ============================================================
+   Keyboard shortcuts modal
+   ============================================================ */
+.shortcuts-card { max-width: 420px !important; }
+.shortcuts-grid { display: flex; flex-direction: column; gap: 8px; margin-top: 16px; }
+.shortcut-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 0; border-bottom: 1px solid var(--border);
+}
+.shortcut-row:last-child { border-bottom: none; }
+.shortcut-row kbd {
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: 4px; padding: 2px 8px;
+  font-family: var(--mono); font-size: 12px; font-weight: 500;
+  box-shadow: 0 1px 0 var(--border);
+}
+.shortcut-row span { color: var(--text-secondary); font-size: 13px; }
+
+/* ============================================================
+   Shortcuts hint in footer
+   ============================================================ */
+.shortcuts-hint {
+  display: inline-block; margin-left: 12px;
+  font-size: 11px; color: var(--text-secondary);
+  border: 1px solid var(--border); border-radius: 4px;
+  padding: 1px 6px; cursor: pointer;
+  font-family: var(--mono); transition: all var(--transition);
+}
+.shortcuts-hint:hover { border-color: var(--accent); color: var(--accent); }
+
+@keyframes fadeOut {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(-8px); }
+}
+
+/* ============================================================
+   Responsive — improved mobile experience
    ============================================================ */
 @media (max-width: 640px) {
   .hero h1 { font-size: 24px; }
-  .card { padding: 20px; }
-  .nav-inner { padding: 0 16px; }
-  .nav-btn { font-size: 12px; padding: 4px 10px; }
+  .hero { padding: 24px 0 20px; }
+  .card { padding: 16px; }
+  main { padding: 16px 12px 48px; }
+
+  /* Mobile nav: hide text labels, icon-only + compact */
+  .nav-inner { padding: 0 8px; height: 48px; }
+  .nav-links { gap: 0; }
+  .nav-btn { font-size: 11px; padding: 4px 8px; border-radius: 6px; }
+  .logo { font-size: 15px; }
+
   .field-row { flex-direction: column; gap: 0; }
   .btn-row { flex-direction: column; }
   .filter-bar { flex-direction: column; }
-  .filter-bar .filter-select { width: 100%; }
+  .filter-bar .search-input { min-width: auto; }
+  .filter-bar .filter-select { width: 100%; min-width: auto; }
   .model-grid { grid-template-columns: 1fr; }
+  .skeleton-grid { grid-template-columns: 1fr; }
   .timeline-roles { grid-template-columns: 1fr; }
   .tools-grid { grid-template-columns: 1fr; }
-  .overlay-card { padding: 20px; max-height: 90vh; }
-  .history-item-top { flex-direction: column; gap: 2px; }
+
+  /* Overlay - fullscreen on mobile */
+  .overlay-card { padding: 20px; max-height: 90vh; width: 96%; border-radius: var(--radius-sm); }
+
+  /* Comparison - vertical stack */
+  .compare-overlay .overlay-card { max-width: 100%; }
+  .compare-grid { grid-template-columns: 1fr; }
+
+  /* History */
+  .history-item-top { flex-direction: column; gap: 2px; align-items: flex-start; }
+
+  /* Onboarding */
+  .onboarding-banner { flex-direction: column; align-items: flex-start; }
+  .onboarding-steps { flex-direction: column; align-items: flex-start; gap: 4px; }
+  .onboarding-arrow { display: none; }
+
+  /* Result toolbar */
+  .result-toolbar { flex-direction: column; gap: 8px; }
+  .result-actions { width: 100%; justify-content: flex-start; }
+
+  /* TOC hidden on mobile (use scroll instead) */
+  .toc-sidebar { display: none !important; }
 }
