@@ -4,14 +4,25 @@
 
 输入竞赛题目 → 获取论文框架、数学转编程思路、可运行 Python 代码。附带 33 个模型参考库、历年真题、4 天竞赛时间线指南。
 
+## 下载 (macOS)
+
+[**下载 MathModelingAssistant-1.0.0.dmg**](https://github.com/chengfengyi-falcon/math-modeling-assistant/releases/download/v1.0.0/MathModelingAssistant-1.0.0.dmg)
+
+1. 下载 DMG，双击打开，将 `MathModelingAssistant.app` 拖入 `Applications`
+2. 首次启动时，应用会自动打开配置文件，填入 [DeepSeek API Key](https://platform.deepseek.com/api_keys) 后重启应用
+3. 如遇到"无法验证开发者"提示，前往 **系统设置 → 隐私与安全性 → 仍要打开**
+
+> 更多版本见 [Releases 页面](https://github.com/chengfengyi-falcon/math-modeling-assistant/releases)
+
 ## 功能
 
 | Tab | 功能 |
 |-----|------|
 | **Generator** | 选择竞赛类型和题型，输入题目 → 生成完整论文方案 + AI 使用报告 + LaTeX 模板 |
+| **Paper** | 生成完整学术论文，A4 排版预览，支持编辑、AI 查重、引用验证、数学推导复核 |
 | **Models** | 33 个数学模型速查库，支持按类别/题型/难度筛选和关键词搜索 |
-| **Problems** | 2024-2025 美赛 & 国赛真题，点击即可填入生成器 |
-| **Guide** | 4 天竞赛时间线、推荐工具链、代码规范 |
+| **Problems** | 2000-2024 美赛 & 国赛真题，点击即可填入生成器 |
+| **Guide** | 4 天竞赛时间线、推荐工具链、提交前检查清单 |
 | **Roles** | 建模手/编程手/写作手的分工 + 每日详细任务 + 协作检查点 |
 
 ## 技术架构
@@ -88,21 +99,27 @@ python app.py
 
 ```
 math-modeling-assistant/
-├── app.py                 # Flask 主程序 (8 路由)
+├── app.py                 # Flask 主程序
 ├── config.py              # 配置 (从 .env 读取 API Key)
+├── launcher.py            # macOS App 启动器
+├── mac_build.spec         # PyInstaller 打包配置
+├── mac_build.sh           # DMG 构建脚本
 ├── requirements.txt       # Python 依赖
 ├── .env                   # API Key (git ignored)
 ├── src/
 │   ├── llm_client.py      # DeepSeek API 封装 (OpenAI 兼容)
-│   ├── prompts.py         # System Prompt + 参数化生成 Prompt
+│   ├── prompts.py         # System Prompt + 生成 Prompt
 │   ├── models_data.py     # 33 个数学模型数据
-│   ├── problems_data.py   # 10 道历年真题数据
-│   └── guide_data.py      # 竞赛指南数据
+│   ├── problems_data.py   # 历年真题数据
+│   ├── guide_data.py      # 竞赛指南数据
+│   └── scholar.py         # Semantic Scholar API 封装
 ├── templates/
-│   └── index.html         # 前端页面 (5-tab SPA)
+│   └── index.html         # 前端页面 (6-tab SPA)
 ├── static/
-│   ├── style.css          # 样式
-│   └── script.js          # 交互逻辑
+│   ├── style.css          # 样式 (深色模式)
+│   ├── script.js          # 交互逻辑
+│   ├── sw.js              # Service Worker (PWA)
+│   └── manifest.json      # PWA manifest
 └── README.md
 ```
 
