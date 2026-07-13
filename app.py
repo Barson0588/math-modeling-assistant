@@ -3,6 +3,7 @@ from src.prompts import (
     ROLES_INFO, SYSTEM_MCM_EN, SYSTEM_MCM_CN, SYSTEM_AI_REPORT,
     PAPER_PROMPT, AI_REPORT_PROMPT, LATEX_TEMPLATE,
     SYSTEM_PAPER, PAPER_FULL_PROMPT, SYSTEM_EXPLAIN, PAPER_LATEX_PROMPT,
+    SYSTEM_MATH_VERIFY,
 )
 from datetime import date
 from src.llm_client import generate_response, generate_stream
@@ -401,6 +402,123 @@ def generate_paper_latex():
             "X-Accel-Buffering": "no",
         },
     )
+
+
+# ===== API: Reference Verification =====
+
+@app.route("/api/verify-references", methods=["POST"])
+def verify_references():
+    data = request.get_json()
+    content = data.get("content", "").strip()
+
+    if not content:
+        return jsonify({"error": "请提供论文内容"}), 400
+
+    # Extract potential reference lines (numbered references like [1] ..., or APA-style)
+    import re
+    ref_patterns = [
+        r'\[(\d+)\]\s+(.+?)(?=\[\d+\]|\Z)',  # [1] Author. Title...
+        r'^\d+\.\s+(.+?)(?=\n\d+\.|\Z)',      # 1. Author. Title...
+    ]
+    refs_found = []
+    for pattern in ref_patterns:
+        matches = re.findall(pattern, content, re.DOTALL | re.MULTILINE)
+        for match in matches:
+            ref_text = (match[1] if isinstance(match, tuple) else match).strip()
+            if len(ref_text) > 30:
+                refs_found.append(ref_text[:300])
+
+    if not refs_found:
+        return jsonify({"error": "未在论文中找到参考文献"}), 400
+
+    # Search each reference against Semantic Scholar
+    results = []
+    for ref in refs_found[:10]:
+        # Extract likely title (first sentence or quoted text)
+        title_guess = ref.split('.')[0].strip() if '.' in ref else ref[:100]
+        # Remove author names for cleaner search
+        title_guess = re.sub(r'^[A-Z][a-z]+,\s+[A-Z]\.', '', title_guess).strip()
+        if len(title_guess) < 15:
+            title_guess = ref[:100]
+
+        papers = search_by_keywords([title_guess], limit=3)
+        if papers:
+            best = papers[0]
+            results.append({
+                "original": ref[:200],
+                "status": "verified" if best.get("title") else "not_found",
+                "match_title": best.get("title", ""),
+                "match_authors": best.get("authors", []),
+                "match_year": best.get("year"),
+                "match_citations": best.get("citationCount", 0),
+                "match_doi": best.get("doi", ""),
+                "match_url": best.get("url", ""),
+            })
+        else:
+            results.append({
+                "original": ref[:200],
+                "status": "not_found",
+                "match_title": "",
+                "match_authors": [],
+                "match_year": None,
+                "match_citations": 0,
+                "match_doi": "",
+                "match_url": "",
+            })
+
+    verified = sum(1 for r in results if r["status"] == "verified")
+    return jsonify({
+        "total": len(results),
+        "verified": verified,
+        "fake": len(results) - verified,
+        "results": results,
+    })
+
+
+# ===== API: Math Self-Consistency Check =====
+
+@app.route("/api/verify-math", methods=["POST"])
+def verify_math():
+    data = request.get_json()
+    content = data.get("content", "").strip()
+
+    if not content:
+        return jsonify({"error": "请提供论文内容"}), 400
+
+    # Extract math-heavy sections: formulas and surrounding text
+    import re
+    # Find sections with LaTeX formulas
+    formula_blocks = re.findall(
+        r'(?:#{1,3}\s+[^\n]+|Model\s+Development|模型建立|Mathematical\s+Formulation|数学模型).*?(?=#{1,3}\s+|$)',
+        content, re.DOTALL | re.IGNORECASE
+    )
+
+    if not formula_blocks:
+        # Fallback: use content sections that contain $$ or $
+        parts = content.split('\n\n')
+        formula_blocks = [p for p in parts if '$$' in p or '\\begin' in p or '\\frac' in p]
+
+    if not formula_blocks:
+        return jsonify({"error": "未在论文中找到数学公式"}), 400
+
+    # Take the most formula-dense sections (up to ~3000 chars total)
+    math_text = '\n\n'.join(formula_blocks[:3])[:4000]
+
+    user_prompt = f"""Please verify the mathematical correctness of the following paper section.
+
+For each formula or derivation, independently re-derive it and check for errors.
+
+## Paper Section
+
+{math_text}
+
+Please provide a structured verification report."""
+
+    try:
+        result = generate_response(SYSTEM_MATH_VERIFY, user_prompt, max_tokens=2000)
+        return jsonify({"content": result})
+    except Exception as e:
+        return jsonify({"error": f"数学验证失败: {str(e)}"}), 500
 
 
 if __name__ == "__main__":

@@ -1153,6 +1153,62 @@ footer { text-align: center; padding: 24px; color: var(--text-secondary); font-s
 }
 
 /* ============================================================
+   Verification reports — reference & math checks
+   ============================================================ */
+.verify-report {
+  margin-top: 24px; padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+.verify-report h3 {
+  font-size: 16px; font-weight: 700; margin-bottom: 12px;
+}
+.verify-summary {
+  display: flex; gap: 16px; flex-wrap: wrap;
+  margin-bottom: 16px; padding: 12px 16px;
+  background: var(--bg); border-radius: var(--radius-sm);
+  font-size: 14px; font-weight: 600;
+}
+.verify-stat.verified { color: var(--green); }
+.verify-stat.fake { color: var(--red); }
+.verify-ref-item {
+  padding: 12px 16px; margin-bottom: 8px;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  font-size: 13px; line-height: 1.6;
+  transition: all var(--transition);
+}
+.verify-ref-item.verified { border-left: 3px solid var(--green); }
+.verify-ref-item.not_found { border-left: 3px solid var(--red); background: var(--red-light); }
+.verify-ref-status { font-weight: 700; margin-bottom: 4px; font-size: 13px; }
+.verify-ref-item.verified .verify-ref-status { color: var(--green); }
+.verify-ref-item.not_found .verify-ref-status { color: var(--red); }
+.verify-ref-original { color: var(--text-secondary); font-size: 12px; margin-bottom: 4px; }
+.verify-ref-match { font-size: 13px; }
+.verify-ref-meta { color: var(--text-secondary); font-size: 11px; display: block; }
+
+.math-verify-report h4 { font-size: 14px; font-weight: 700; margin: 12px 0 6px; }
+.math-verify-report ul { padding-left: 20px; margin: 6px 0; }
+.math-verify-report li { margin: 4px 0; font-size: 13px; }
+
+/* ============================================================
+   Data source hints — on simulated data code blocks
+   ============================================================ */
+.data-source-hint {
+  font-size: 11px; padding: 6px 12px; margin-bottom: -1px;
+  background: var(--amber-light); color: var(--amber);
+  border: 1px solid var(--amber); border-bottom: none;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  font-weight: 500;
+}
+.data-source-hint + pre {
+  margin-top: 0;
+  border-top-left-radius: 0; border-top-right-radius: 0;
+}
+.data-source-mark {
+  background: rgba(217, 119, 6, .2); color: var(--amber);
+  padding: 1px 0; border-radius: 2px;
+}
+
+/* ============================================================
    Responsive — improved mobile experience
    ============================================================ */
 @media (max-width: 640px) {

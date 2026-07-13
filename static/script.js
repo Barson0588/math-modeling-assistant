@@ -621,6 +621,8 @@ generateBtn.addEventListener('click', async () => {
     injectVerificationChecklist(resultContent);
     injectExplainButtons(resultContent);
     injectScholarButton();
+    injectVerifyRefsButton();
+    injectVerifyMathButton();
     if (!errorOccurred && fullContent) {
       saveHistory(problem, contestType, problemType, fullContent);
       saveDraft(problem, contestType, problemType, fullContent);
@@ -849,6 +851,8 @@ paperGenerateBtn.addEventListener('click', async () => {
     injectDisclaimer(paperContent);
     injectVerificationChecklist(paperContent);
     injectExplainButtons(paperContent);
+    // Note: scholar + verify buttons inject into .result-actions, which
+    // doesn't exist in the paper tab. Skip those for paper.
     if (!errorOccurred && fullContent) {
       showToast('论文生成完成');
     }
@@ -1671,6 +1675,161 @@ function renderSubmissionChecklist(checklist) {
   // existing tabKeys object. Since it's already registered, we override.
   const origHandler = document.onkeydown;
 })();
+
+// ============================================================
+// Reference Verification — check every citation against Scholar
+// ============================================================
+function injectVerifyRefsButton() {
+  const actions = document.querySelector('.result-actions');
+  if (!actions || actions.querySelector('.verify-refs-btn')) return;
+
+  const btn = document.createElement('button');
+  btn.className = 'btn-sm verify-refs-btn';
+  btn.textContent = '验证引用';
+  btn.title = '交叉验证参考文献是否真实存在';
+  btn.addEventListener('click', async () => {
+    const resultContent = document.getElementById('result-content');
+    const text = resultContent.innerText;
+    if (!text.trim()) { showToast('没有可验证的内容'); return; }
+
+    btn.textContent = '验证中...';
+    btn.disabled = true;
+
+    try {
+      const res = await fetch('/api/verify-references', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: text }),
+      });
+      const data = await res.json();
+
+      let existing = resultContent.querySelector('.verify-report');
+      if (existing) existing.remove();
+
+      const div = document.createElement('div');
+      div.className = 'verify-report';
+      if (data.error) {
+        div.innerHTML = `<p class="error-msg">${escapeHtml(data.error)}</p>`;
+      } else {
+        const verifiedIcon = '✓';
+        const fakeIcon = '✗';
+        div.innerHTML = `
+          <h3>引用验证报告</h3>
+          <div class="verify-summary">
+            <span class="verify-stat verified">${verifiedIcon} ${data.verified} 条已验证</span>
+            <span class="verify-stat fake">${fakeIcon} ${data.fake} 条未找到</span>
+            <span class="verify-stat">共 ${data.total} 条</span>
+          </div>
+          ${data.results.map(r => `
+            <div class="verify-ref-item ${r.status}">
+              <div class="verify-ref-status">${r.status === 'verified' ? verifiedIcon + ' 已验证' : fakeIcon + ' 未找到匹配'}</div>
+              <div class="verify-ref-original"><strong>原文:</strong> ${escapeHtml(r.original).slice(0, 150)}</div>
+              ${r.status === 'verified' ? `
+                <div class="verify-ref-match">
+                  <strong>匹配:</strong> ${escapeHtml(r.match_title)}
+                  <span class="verify-ref-meta">${r.match_authors.slice(0, 3).join(', ')} (${r.match_year || 'n.d.'}) · 被引 ${r.match_citations} 次</span>
+                  ${r.match_doi ? `<a href="https://doi.org/${r.match_doi}" target="_blank" rel="noopener">DOI</a>` : ''}
+                </div>
+              ` : `
+                <div class="verify-ref-match"><strong>建议:</strong> 此引用可能为 AI 生成，请手动检索真实文献替换</div>
+              `}
+            </div>
+          `).join('')}
+        `;
+      }
+      resultContent.appendChild(div);
+      div.scrollIntoView({ behavior: 'smooth' });
+    } catch (e) {
+      showToast('引用验证失败');
+    } finally {
+      btn.textContent = '验证引用';
+      btn.disabled = false;
+    }
+  });
+  actions.appendChild(btn);
+}
+
+// ============================================================
+// Math Verification — second-pass consistency check
+// ============================================================
+function injectVerifyMathButton() {
+  const actions = document.querySelector('.result-actions');
+  if (!actions || actions.querySelector('.verify-math-btn')) return;
+
+  const btn = document.createElement('button');
+  btn.className = 'btn-sm verify-math-btn';
+  btn.textContent = '验证推导';
+  btn.title = '独立复核数学推导的正确性';
+  btn.addEventListener('click', async () => {
+    const resultContent = document.getElementById('result-content');
+    const text = resultContent.innerText;
+    if (!text.trim()) { showToast('没有可验证的内容'); return; }
+
+    btn.textContent = '验证中...';
+    btn.disabled = true;
+
+    try {
+      const res = await fetch('/api/verify-math', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: text }),
+      });
+      const data = await res.json();
+
+      let existing = resultContent.querySelector('.math-verify-report');
+      if (existing) existing.remove();
+
+      const div = document.createElement('div');
+      div.className = 'verify-report math-verify-report';
+      if (data.error) {
+        div.innerHTML = `<p class="error-msg">${escapeHtml(data.error)}</p>`;
+      } else {
+        div.innerHTML = `
+          <h3>数学推导验证报告</h3>
+          <div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">以下为独立复核结果，请逐项核实</div>
+          ${marked.parse(data.content)}
+        `;
+      }
+      resultContent.appendChild(div);
+      div.scrollIntoView({ behavior: 'smooth' });
+    } catch (e) {
+      showToast('数学验证失败');
+    } finally {
+      btn.textContent = '验证推导';
+      btn.disabled = false;
+    }
+  });
+  actions.appendChild(btn);
+}
+
+// ============================================================
+// Data Source Highlighter — highlight SIMULATED DATA comments
+// ============================================================
+function injectDataSourceHighlights(container) {
+  container.querySelectorAll('pre code').forEach(code => {
+    const text = code.innerHTML;
+    if (text.includes('SIMULATED DATA')) {
+      code.innerHTML = text.replace(
+        /(#\s*SIMULATED\s+DATA[^\n]*)/gi,
+        '<mark class="data-source-mark">$1</mark>'
+      );
+      const pre = code.closest('pre');
+      if (pre && !pre.parentElement.querySelector('.data-source-hint')) {
+        const hint = document.createElement('div');
+        hint.className = 'data-source-hint';
+        hint.innerHTML = '⚠️ 此代码包含模拟数据 — 查看注释中的真实数据来源建议';
+        pre.parentElement.insertBefore(hint, pre);
+      }
+    }
+  });
+}
+
+// Override injectCodeCopyButtons to also highlight data sources after copy buttons are added
+const _origInjectCode = injectCodeCopyButtons;
+injectCodeCopyButtons = function(container) {
+  _origInjectCode(container);
+  injectDataSourceHighlights(container);
+};
 
 // Actually the tab keys are defined inline in the event listener.
 // We need to update it. Let's find and update via a different approach:
