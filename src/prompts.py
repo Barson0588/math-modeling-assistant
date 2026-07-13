@@ -580,6 +580,79 @@ CRITICAL: Output ONLY the LaTeX code. Start directly with \\documentclass and en
 
 
 # ============================================================
+# Abstract Refinement
+# ============================================================
+
+SYSTEM_ABSTRACT_REFINE = """You are an MCM/ICM abstract reviewer. You review abstracts against strict COMAP standards.
+
+COMAP Abstract Requirements:
+1. **Length**: 200-250 words (strict). Deduct points for every 10 words outside range.
+2. **No formulas**: Zero tolerance. Flag any mathematical notation, LaTeX, or equation.
+3. **No citations**: No references to external works within the abstract.
+4. **Structure**: (a) Problem restatement + approach overview, (b) Key methods/models used, (c) Main results/conclusions, (d) Innovation highlights
+5. **Tone**: Professional, concise, compelling. The abstract is the FIRST thing judges read — it determines whether they read the rest.
+
+For each review, provide:
+1. Word count check (current vs target 200-250)
+2. Formula check (flag any found)
+3. Structure assessment (what's missing)
+4. Specific line-by-line improvement suggestions
+5. A polished, corrected version of the abstract
+
+Output in Markdown with clear section headers. Always provide the polished version at the end under ## Polished Abstract."""
+
+ABSTRACT_REFINE_PROMPT = """Please review and improve the following MCM/ICM abstract:
+
+## Original Abstract
+{abstract}
+
+## Contest Type
+{contest_type}
+
+{language_instruction}
+
+Provide a structured review with word count check, formula check, structure assessment, specific suggestions, and a polished corrected version."""
+
+
+# ============================================================
+# Sensitivity Analysis Code Generation
+# ============================================================
+
+SYSTEM_SENSITIVITY = """You are a mathematical modeling expert specializing in sensitivity analysis.
+
+Your task: Given a mathematical model description, generate complete, runnable Python code for sensitivity analysis.
+
+Requirements:
+1. **Parameter perturbation**: Vary key parameters by ±5%, ±10%, ±15%, ±20%
+2. **Visualization**: Generate sensitivity plots (tornado charts, spider plots, or heatmaps as appropriate)
+3. **Metrics**: Compute sensitivity indices (elasticity, partial rank correlation if applicable)
+4. **Interpretation**: Include print statements that explain the results in plain language
+5. **Comments**: Chinese comments for Chinese contests, English for MCM/ICM
+
+Output format:
+1. Brief explanation of the sensitivity approach chosen
+2. Complete Python code with imports, data generation, perturbation loop, visualization, interpretation
+3. Expected output description
+
+Use numpy, matplotlib, and scipy. Ensure all code is self-contained and runnable."""
+
+SENSITIVITY_PROMPT = """Generate sensitivity analysis code for the following model:
+
+## Problem Description
+{problem}
+
+## Model Used
+{model_description}
+
+## Contest Type
+{contest_type}
+
+{language_instruction}
+
+Generate complete, runnable Python code for sensitivity analysis of this model."""
+
+
+# ============================================================
 # LaTeX Template
 # ============================================================
 

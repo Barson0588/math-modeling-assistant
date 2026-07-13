@@ -464,6 +464,7 @@ async function loadGuide() {
   try {
     const res = await fetch('/api/guide');
     const data = await res.json();
+    injectCountdown();
     renderTimeline(data.timeline);
     renderTools(data.tools);
     renderCodeStandards(data.code_standards);
@@ -852,6 +853,7 @@ paperGenerateBtn.addEventListener('click', async () => {
     injectDisclaimer(paperContent);
     injectVerificationChecklist(paperContent);
     injectExplainButtons(paperContent);
+    injectPaperStats();
     injectQuickActions();
     if (!errorOccurred && fullContent) {
       savePaperHistory(problem, contestType, problemType, fullContent);
@@ -1159,7 +1161,12 @@ function savePaperHistory(problem, contestType, problemType, content) {
 function renderPaperHistory() {
   const history = getPaperHistory();
   if (!paperHistoryCard || !paperHistoryList) return;
-  if (history.length === 0) { paperHistoryCard.hidden = true; return; }
+
+  if (history.length === 0) {
+    paperHistoryCard.hidden = false;
+    paperHistoryList.innerHTML = '<p class="history-empty">还没有论文记录，生成一篇完整论文后会自动出现在这里</p>';
+    return;
+  }
 
   let filtered = history;
   if (paperHistoryFilter) {
@@ -1247,7 +1254,6 @@ function clearPaperHistory() {
   localStorage.setItem(PAPER_HISTORY_KEY, JSON.stringify(starred));
   paperHistoryFilter = '';
   renderPaperHistory();
-  if (starred.length === 0) paperHistoryCard.hidden = true;
   showToast(starred.length > 0 ? `已清除未收藏记录，保留 ${starred.length} 条收藏` : '论文历史已清除');
 }
 
@@ -1896,7 +1902,9 @@ function injectQuickActions() {
   bar.innerHTML = `
     <span class="quick-actions-label">快捷操作</span>
     <button class="quick-action-btn edit-action" id="qa-edit-btn" title="切换编辑 / 预览模式，可直接修改论文内容">✏️ 编辑论文</button>
+    <button class="quick-action-btn abstract-action" id="qa-abstract-btn" title="按 COMAP 标准逐条审查优化摘要">📝 摘要精修</button>
     <button class="quick-action-btn plagiarism-action" id="qa-plagiarism-btn" title="AI 分析论文原创性，检测模板化内容和潜在雷同">🔍 AI 查重</button>
+    <button class="quick-action-btn sensitivity-action" id="qa-sensitivity-btn" title="生成敏感性分析 Python 代码">📊 敏感性分析</button>
     <button class="quick-action-btn verify-refs-action" id="qa-verify-refs-btn" title="交叉验证参考文献是否真实存在">📚 验证引用</button>
     <button class="quick-action-btn verify-math-action" id="qa-verify-math-btn" title="独立复核数学推导的正确性">📐 验证推导</button>
   `;
@@ -1911,7 +1919,9 @@ function injectQuickActions() {
 
   // Wire up buttons
   bar.querySelector('#qa-edit-btn').addEventListener('click', toggleEditMode);
+  bar.querySelector('#qa-abstract-btn').addEventListener('click', runAbstractRefine);
   bar.querySelector('#qa-plagiarism-btn').addEventListener('click', runPlagiarismCheck);
+  bar.querySelector('#qa-sensitivity-btn').addEventListener('click', runSensitivityAnalysis);
   bar.querySelector('#qa-verify-refs-btn').addEventListener('click', runReferenceCheck);
   bar.querySelector('#qa-verify-math-btn').addEventListener('click', runMathCheck);
 }
@@ -2045,9 +2055,218 @@ async function runMathCheck() {
   finally { btn.innerHTML = '📐 验证推导'; btn.disabled = false; }
 }
 
-// Actually the tab keys are defined inline in the event listener.
-// We need to update it. Let's find and update via a different approach:
-// Add explicit paper tab switching via Ctrl+6
+// ============================================================
+// Abstract Refinement
+// ============================================================
+async function runAbstractRefine() {
+  const btn = document.getElementById('qa-abstract-btn');
+  const resultContent = getActiveContent();
+  const text = resultContent ? resultContent.innerText : '';
+  if (!text.trim()) { showToast('没有可分析的摘要'); return; }
+
+  // Try to extract abstract section from paper
+  const absMatch = text.match(/(?:Abstract|摘要|Summary)[\s\S]{0,3000}/i);
+  const abstract = absMatch ? absMatch[0].slice(0, 3000) : text.slice(0, 3000);
+
+  btn.innerHTML = '⏳ 分析中...'; btn.disabled = true;
+  try {
+    const contestType = document.getElementById('paper-contest-type')?.value || 'MCM/ICM';
+    const res = await fetch('/api/refine-abstract', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ abstract, contest_type: contestType }),
+    });
+    const data = await res.json();
+    let existing = resultContent.querySelector('.abstract-refine-report');
+    if (existing) existing.remove();
+    const div = document.createElement('div');
+    div.className = 'verify-report abstract-refine-report';
+    div.innerHTML = data.error
+      ? `<p class="error-msg">${escapeHtml(data.error)}</p>`
+      : `<h3>摘要精修报告</h3><div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">按 COMAP 标准逐条审查</div>${marked.parse(data.content)}`;
+    resultContent.appendChild(div);
+    div.scrollIntoView({ behavior: 'smooth' });
+  } catch (e) { showToast('摘要分析失败'); }
+  finally { btn.innerHTML = '📝 摘要精修'; btn.disabled = false; }
+}
+
+// ============================================================
+// Sensitivity Analysis Code Generation
+// ============================================================
+async function runSensitivityAnalysis() {
+  const btn = document.getElementById('qa-sensitivity-btn');
+  const resultContent = getActiveContent();
+  const text = resultContent ? resultContent.innerText : '';
+  if (!text.trim()) { showToast('没有可分析的内容'); return; }
+
+  // Extract model description section from paper
+  const modelMatch = text.match(/(?:Model\s+Development|模型建立|Mathematical\s+Formulation|数学模型)[\s\S]{0,3000}/i);
+  const modelDesc = modelMatch ? modelMatch[0].slice(0, 3000) : text.slice(0, 2000);
+
+  // Get problem from the paper form
+  const problem = document.getElementById('paper-problem')?.value.trim() || 'the mathematical modeling problem';
+
+  btn.innerHTML = '⏳ 生成代码中...'; btn.disabled = true;
+  try {
+    const contestType = document.getElementById('paper-contest-type')?.value || 'MCM/ICM';
+    const res = await fetch('/api/generate-sensitivity', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ problem, model_description: modelDesc, contest_type: contestType }),
+    });
+    const data = await res.json();
+    let existing = resultContent.querySelector('.sensitivity-report');
+    if (existing) existing.remove();
+    const div = document.createElement('div');
+    div.className = 'verify-report sensitivity-report';
+    div.innerHTML = data.error
+      ? `<p class="error-msg">${escapeHtml(data.error)}</p>`
+      : `<h3>敏感性分析代码</h3><div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">自动生成的敏感性分析 Python 代码</div>${marked.parse(data.content)}`;
+    resultContent.appendChild(div);
+    injectCodeCopyButtons(div);
+    div.scrollIntoView({ behavior: 'smooth' });
+  } catch (e) { showToast('敏感性分析生成失败'); }
+  finally { btn.innerHTML = '📊 敏感性分析'; btn.disabled = false; }
+}
+
+// ============================================================
+// Paper Word/Page Stats
+// ============================================================
+function injectPaperStats() {
+  const resultCard = document.querySelector('.paper-result-card.visible');
+  if (!resultCard || resultCard.querySelector('.paper-stats')) return;
+
+  const content = paperContent.innerText || '';
+  const words = content.trim() ? content.trim().split(/\s+/).length : 0;
+  const chars = content.length;
+  // Rough page estimate: ~500 words per page with figures (MCM format)
+  const estPages = Math.ceil(words / 450) || 1;
+  const isOver = estPages > 25;
+
+  // Extract abstract word count
+  const absMatch = content.match(/Abstract[\s\S]*?(?=\n#|\n1\.|Introduction)/i);
+  let abstractWords = 0;
+  if (absMatch) {
+    const absText = absMatch[0].replace(/Abstract|Summary|Keywords|关键词|摘要/gi, '').trim();
+    abstractWords = absText.split(/\s+/).filter(w => w.length > 1).length;
+  }
+
+  const stats = document.createElement('div');
+  stats.className = 'paper-stats';
+  stats.innerHTML = `
+    <div class="paper-stats-grid">
+      <div class="paper-stat-item">
+        <span class="paper-stat-num" id="stat-total-words">${words.toLocaleString()}</span>
+        <span class="paper-stat-label">总词数</span>
+      </div>
+      <div class="paper-stat-item">
+        <span class="paper-stat-num${isOver ? ' over' : ''}" id="stat-pages">${estPages}</span>
+        <span class="paper-stat-label">预估页数${isOver ? ' ⚠️超25页' : ''}</span>
+      </div>
+      <div class="paper-stat-item">
+        <span class="paper-stat-num${abstractWords < 200 || abstractWords > 250 ? ' warn' : ''}" id="stat-abstract-words">${abstractWords || '—'}</span>
+        <span class="paper-stat-label">摘要词数${abstractWords && (abstractWords < 200 || abstractWords > 250) ? ' ⚠️' : ''}</span>
+      </div>
+      <div class="paper-stat-item">
+        <span class="paper-stat-num">${chars.toLocaleString()}</span>
+        <span class="paper-stat-label">总字符</span>
+      </div>
+    </div>
+  `;
+
+  const toolbar = resultCard.querySelector('.result-toolbar');
+  if (toolbar) {
+    toolbar.insertAdjacentElement('afterend', stats);
+  } else {
+    resultCard.insertBefore(stats, resultCard.firstChild);
+  }
+}
+
+// ============================================================
+// Competition Countdown
+// ============================================================
+function injectCountdown() {
+  const guideTab = document.getElementById('tab-guide');
+  if (!guideTab || guideTab.querySelector('.countdown-card')) return;
+
+  // MCM/ICM: late January each year (around Jan 23-26)
+  // CUMCM: early September each year (around Sep 8-11)
+  function nextMCMDate() {
+    const now = new Date();
+    const year = now.getFullYear();
+    // MCM typically starts on the last Thursday of January
+    let jan31 = new Date(year, 0, 31);
+    let lastThu = new Date(jan31);
+    lastThu.setDate(jan31.getDate() - ((jan31.getDay() + 3) % 7)); // last Thursday
+    // MCM starts around Jan 23-26, roughly last Thursday
+    // Use Jan 23 as approximate start
+    let mcm = new Date(year, 0, 23);
+    // Find the Thursday of that week
+    mcm = new Date(year, 0, 23);
+    if (now > mcm) {
+      mcm = new Date(year + 1, 0, 23);
+    }
+    return mcm;
+  }
+
+  function nextCUMCMDate() {
+    const now = new Date();
+    const year = now.getFullYear();
+    // CUMCM: around September 8-11
+    let cumcm = new Date(year, 8, 8); // Sep 8
+    if (now > cumcm) {
+      cumcm = new Date(year + 1, 8, 8);
+    }
+    return cumcm;
+  }
+
+  function fmtCountdown(target) {
+    const diff = target - new Date();
+    if (diff <= 0) return '进行中...';
+    const days = Math.floor(diff / 86400000);
+    const hours = Math.floor((diff % 86400000) / 3600000);
+    return `${days} 天 ${hours} 小时`;
+  }
+
+  const mcmDate = nextMCMDate();
+  const cumcmDate = nextCUMCMDate();
+
+  const card = document.createElement('div');
+  card.className = 'card countdown-card';
+  card.innerHTML = `
+    <h2 class="section-title">比赛倒计时</h2>
+    <div class="countdown-grid">
+      <div class="countdown-item">
+        <div class="countdown-label">MCM/ICM (美赛)</div>
+        <div class="countdown-date">${mcmDate.toLocaleDateString('zh-CN', {year:'numeric', month:'long', day:'numeric'})} (预计)</div>
+        <div class="countdown-timer" id="mcm-countdown">${fmtCountdown(mcmDate)}</div>
+        <div class="countdown-type">每年 1 月下旬 · 英文论文</div>
+      </div>
+      <div class="countdown-item">
+        <div class="countdown-label">CUMCM (国赛)</div>
+        <div class="countdown-date">${cumcmDate.toLocaleDateString('zh-CN', {year:'numeric', month:'long', day:'numeric'})} (预计)</div>
+        <div class="countdown-timer" id="cumcm-countdown">${fmtCountdown(cumcmDate)}</div>
+        <div class="countdown-type">每年 9 月上旬 · 中文论文</div>
+      </div>
+    </div>
+  `;
+
+  // Insert as the first card in the guide tab
+  const hero = guideTab.querySelector('.hero');
+  if (hero) {
+    hero.insertAdjacentElement('afterend', card);
+  } else {
+    guideTab.insertBefore(card, guideTab.firstChild);
+  }
+
+  // Update countdown every minute
+  setInterval(() => {
+    const mcmEl = document.getElementById('mcm-countdown');
+    const cumcmEl = document.getElementById('cumcm-countdown');
+    if (mcmEl) mcmEl.textContent = fmtCountdown(mcmDate);
+    if (cumcmEl) cumcmEl.textContent = fmtCountdown(cumcmDate);
+  }, 60000);
+}
+
+// Paper tab keyboard shortcut (Ctrl+6)
 document.addEventListener('keydown', function paperShortcut(e) {
   if ((e.metaKey || e.ctrlKey) && e.key === '6') {
     e.preventDefault();

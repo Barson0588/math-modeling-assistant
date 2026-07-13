@@ -1328,6 +1328,24 @@ footer { text-align: center; padding: 24px; color: var(--text-secondary); font-s
   background: var(--accent-light);
   color: var(--accent);
 }
+.quick-action-btn.abstract-action:hover {
+  border-color: #0ea5e9;
+  background: #f0f9ff;
+  color: #0284c7;
+}
+[data-theme="dark"] .quick-action-btn.abstract-action:hover {
+  background: #0c2d48;
+  color: #38bdf8;
+}
+.quick-action-btn.sensitivity-action:hover {
+  border-color: #f97316;
+  background: #fff7ed;
+  color: #ea580c;
+}
+[data-theme="dark"] .quick-action-btn.sensitivity-action:hover {
+  background: #3d1a04;
+  color: #fb923c;
+}
 
 @media (max-width: 640px) {
   .quick-actions-bar {
@@ -1344,6 +1362,97 @@ footer { text-align: center; padding: 24px; color: var(--text-secondary); font-s
     flex: 1;
   }
 }
+
+/* ============================================================
+   Paper Stats Bar
+   ============================================================ */
+.paper-stats {
+  margin: 12px 0 0;
+  padding: 12px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.paper-stats-grid {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+.paper-stat-item {
+  flex: 1;
+  min-width: 80px;
+  text-align: center;
+}
+.paper-stat-num {
+  display: block;
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text);
+  font-family: var(--mono);
+}
+.paper-stat-num.over {
+  color: var(--red);
+}
+.paper-stat-num.warn {
+  color: var(--amber);
+}
+.paper-stat-label {
+  display: block;
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* ============================================================
+   Competition Countdown
+   ============================================================ */
+.countdown-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+.countdown-item {
+  padding: 20px;
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  text-align: center;
+  transition: border-color var(--transition);
+}
+.countdown-item:hover {
+  border-color: var(--accent);
+}
+.countdown-label {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+.countdown-date {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 12px;
+}
+.countdown-timer {
+  font-size: 32px;
+  font-weight: 800;
+  color: var(--accent);
+  font-family: var(--mono);
+  line-height: 1.2;
+}
+.countdown-type {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 6px;
+}
+
+/* Abstract / Sensitivity report styles */
+.abstract-refine-report h4,
+.sensitivity-report h4 {
+  font-size: 14px; font-weight: 700; margin: 12px 0 6px;
+}
+.sensitivity-report pre { margin: 8px 0; }
 
 /* ============================================================
    Responsive — improved mobile experience
@@ -1407,4 +1516,12 @@ footer { text-align: center; padding: 24px; color: var(--text-secondary); font-s
   /* History */
   .history-item-top { flex-direction: column; gap: 2px; align-items: flex-start; }
   .history-time-rel { margin-left: 0; }
+
+  /* Paper stats compact */
+  .paper-stats-grid { gap: 8px; }
+  .paper-stat-num { font-size: 17px; }
+
+  /* Countdown compact */
+  .countdown-grid { grid-template-columns: 1fr; }
+  .countdown-timer { font-size: 24px; }
 }

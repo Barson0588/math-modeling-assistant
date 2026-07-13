@@ -4,6 +4,8 @@ from src.prompts import (
     PAPER_PROMPT, AI_REPORT_PROMPT, LATEX_TEMPLATE,
     SYSTEM_PAPER, PAPER_FULL_PROMPT, SYSTEM_EXPLAIN, PAPER_LATEX_PROMPT,
     SYSTEM_MATH_VERIFY, SYSTEM_PLAGIARISM,
+    SYSTEM_ABSTRACT_REFINE, ABSTRACT_REFINE_PROMPT,
+    SYSTEM_SENSITIVITY, SENSITIVITY_PROMPT,
 )
 from datetime import date
 from src.llm_client import generate_response, generate_stream
@@ -548,6 +550,68 @@ Provide a section-by-section originality assessment with specific flagged passag
         return jsonify({"content": result})
     except Exception as e:
         return jsonify({"error": f"查重分析失败: {str(e)}"}), 500
+
+
+# ===== API: Abstract Refinement =====
+
+@app.route("/api/refine-abstract", methods=["POST"])
+def refine_abstract():
+    data = request.get_json()
+    abstract = data.get("abstract", "").strip()
+    contest_type = data.get("contest_type", "MCM/ICM")
+
+    if not abstract:
+        return jsonify({"error": "请输入摘要内容"}), 400
+
+    if contest_type == "CUMCM":
+        language_instruction = "使用中文进行检查和建议。"
+    else:
+        language_instruction = "Provide all feedback in English."
+
+    user_prompt = ABSTRACT_REFINE_PROMPT.format(
+        abstract=abstract,
+        contest_type=contest_type,
+        language_instruction=language_instruction,
+    )
+
+    try:
+        result = generate_response(SYSTEM_ABSTRACT_REFINE, user_prompt, max_tokens=2000)
+        return jsonify({"content": result})
+    except Exception as e:
+        return jsonify({"error": f"摘要优化失败: {str(e)}"}), 500
+
+
+# ===== API: Sensitivity Analysis Code Generation =====
+
+@app.route("/api/generate-sensitivity", methods=["POST"])
+def generate_sensitivity():
+    data = request.get_json()
+    problem = data.get("problem", "").strip()
+    model_description = data.get("model_description", "").strip()
+    contest_type = data.get("contest_type", "MCM/ICM")
+
+    if not problem:
+        return jsonify({"error": "请输入问题描述"}), 400
+    if not model_description:
+        model_description = "The mathematical model described in the paper"
+
+    if contest_type == "CUMCM":
+        language_instruction = "使用中文注释。"
+    else:
+        language_instruction = "Use English comments."
+
+    user_prompt = SENSITIVITY_PROMPT.format(
+        problem=problem,
+        model_description=model_description,
+        contest_type=contest_type,
+        language_instruction=language_instruction,
+    )
+
+    try:
+        result = generate_response(SYSTEM_SENSITIVITY, user_prompt, max_tokens=3000)
+        return jsonify({"content": result})
+    except Exception as e:
+        return jsonify({"error": f"敏感性分析生成失败: {str(e)}"}), 500
 
 
 if __name__ == "__main__":
