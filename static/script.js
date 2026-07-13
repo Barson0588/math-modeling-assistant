@@ -460,6 +460,8 @@ function useProblem(contest, type, category, description, requirements) {
 // ============================================================
 // Tab: Competition Guide
 // ============================================================
+let _paperAnalysisSetup = false;
+
 async function loadGuide() {
   try {
     const res = await fetch('/api/guide');
@@ -469,9 +471,49 @@ async function loadGuide() {
     renderTools(data.tools);
     renderCodeStandards(data.code_standards);
     if (data.submission_checklist) renderSubmissionChecklist(data.submission_checklist);
+    if (data.viz_templates) renderVizTemplates(data.viz_templates);
+    setupPaperAnalysis();
   } catch (e) {
     document.getElementById('timeline-container').innerHTML = '<p class="error-msg">加载失败 <button class="btn-sm" onclick="loadedTabs.guide=false;loadGuide()">重试</button></p>';
   }
+}
+
+function setupPaperAnalysis() {
+  if (_paperAnalysisSetup) return;
+  _paperAnalysisSetup = true;
+
+  const fileInput = document.getElementById('paper-file-input');
+  const resultDiv = document.getElementById('paper-analysis-result');
+  const hint = document.getElementById('upload-hint');
+
+  if (!fileInput || !resultDiv) return;
+
+  fileInput.addEventListener('change', async () => {
+    const file = fileInput.files[0];
+    if (!file) return;
+
+    hint.textContent = '分析中...';
+    resultDiv.hidden = true;
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const res = await fetch('/api/analyze-paper', { method: 'POST', body: formData });
+      const data = await res.json();
+
+      if (data.error) {
+        hint.textContent = data.error;
+        return;
+      }
+
+      resultDiv.hidden = false;
+      resultDiv.innerHTML = marked.parse(data.content);
+      resultDiv.scrollIntoView({ behavior: 'smooth' });
+      hint.textContent = '分析完成';
+    } catch (e) {
+      hint.textContent = '分析失败，请重试';
+    }
+  });
 }
 
 function renderTimeline(timeline) {
@@ -1264,6 +1306,7 @@ renderPaperHistory();
 // Session Restore — auto-save draft to survive page refresh
 // ============================================================
 const DRAFT_KEY = 'mma-draft';
+const INPUT_DRAFT_KEY = 'mma-input-draft';
 
 function saveDraft(problem, contestType, problemType, content) {
   localStorage.setItem(DRAFT_KEY, JSON.stringify({
@@ -1277,6 +1320,62 @@ function clearDraft() {
   const banner = document.getElementById('draft-restore-banner');
   if (banner) banner.remove();
 }
+
+// ——— Auto-save textarea inputs on keystroke (debounced) ———
+let _inputSaveTimer = null;
+function autoSaveInputs() {
+  clearTimeout(_inputSaveTimer);
+  _inputSaveTimer = setTimeout(() => {
+    const data = {
+      contestType: document.getElementById('contest-type')?.value || '',
+      problemType: document.getElementById('problem-type')?.value || '',
+      problem: document.getElementById('problem')?.value || '',
+      requirements: document.getElementById('requirements')?.value || '',
+      paperContestType: document.getElementById('paper-contest-type')?.value || '',
+      paperProblemType: document.getElementById('paper-problem-type')?.value || '',
+      paperProblem: document.getElementById('paper-problem')?.value || '',
+      paperRequirements: document.getElementById('paper-requirements')?.value || '',
+      time: Date.now(),
+    };
+    localStorage.setItem(INPUT_DRAFT_KEY, JSON.stringify(data));
+  }, 500);
+}
+
+function restoreInputs() {
+  try {
+    const raw = localStorage.getItem(INPUT_DRAFT_KEY);
+    if (!raw) return;
+    const d = JSON.parse(raw);
+    if (!d.time || Date.now() - d.time > 72 * 3600 * 1000) {
+      localStorage.removeItem(INPUT_DRAFT_KEY);
+      return;
+    }
+    const setVal = (id, val) => { if (val) { const el = document.getElementById(id); if (el && !el.value) el.value = val; } };
+    setVal('contest-type', d.contestType);
+    setVal('problem-type', d.problemType);
+    setVal('problem', d.problem);
+    setVal('requirements', d.requirements);
+    setVal('paper-contest-type', d.paperContestType);
+    setVal('paper-problem-type', d.paperProblemType);
+    setVal('paper-problem', d.paperProblem);
+    setVal('paper-requirements', d.paperRequirements);
+    // Sync Generator -> Paper tab
+    if (d.problem && !d.paperProblem) {
+      setVal('paper-problem', d.problem);
+    }
+  } catch (e) { localStorage.removeItem(INPUT_DRAFT_KEY); }
+}
+
+// Attach auto-save listeners to all textareas and selects
+['input', 'change'].forEach(evt => {
+  document.addEventListener(evt, e => {
+    const el = e.target;
+    if (el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' ||
+        (el.tagName === 'INPUT' && el.type === 'text')) {
+      autoSaveInputs();
+    }
+  });
+});
 
 function checkDraft() {
   try {
@@ -1322,6 +1421,7 @@ function checkDraft() {
 
 // Check for saved draft on page load
 checkDraft();
+restoreInputs();
 
 // ============================================================
 // Utilities
@@ -1387,13 +1487,76 @@ function buildTOC(container) {
 // ============================================================
 // Inject copy buttons into code blocks (called after render)
 // ============================================================
+// ——— Pyodide Python Runner ———
+let _pyodide = null;
+let _pyodideLoading = false;
+let _pyodideLoadPromise = null;
+
+async function getPyodide() {
+  if (_pyodide) return _pyodide;
+  if (_pyodideLoadPromise) return _pyodideLoadPromise;
+
+  _pyodideLoadPromise = (async () => {
+    _pyodideLoading = true;
+    _pyodide = await loadPyodide({ indexURL: 'https://cdn.jsdelivr.net/pyodide/v0.25.0/full/' });
+    await _pyodide.loadPackage(['numpy', 'micropip']);
+    _pyodideLoading = false;
+    return _pyodide;
+  })();
+  return _pyodideLoadPromise;
+}
+
+async function runCodeBlock(pre, btn) {
+  const code = pre.querySelector('code') ? (pre.querySelector('code').innerText || pre.querySelector('code').textContent) : pre.innerText;
+
+  // Remove existing output
+  const existing = pre.parentElement.querySelector('.code-output');
+  if (existing) existing.remove();
+
+  btn.textContent = '⏳ 加载中...';
+  btn.disabled = true;
+
+  try {
+    const pyodide = await getPyodide();
+    btn.textContent = '⏳ 运行中...';
+
+    // Redirect stdout
+    let output = '';
+    pyodide.setStdout({ batched: (s) => { output += s + '\n'; } });
+    pyodide.setStderr({ batched: (s) => { output += s + '\n'; } });
+
+    // Execute with timeout via pyodide's own mechanism
+    // Remove matplotlib show() calls since they won't render
+    const safeCode = code.replace(/plt\.show\(\)/g, '# plt.show() — skipped (no GUI)')
+      .replace(/cv2\.imshow\([^)]+\)/g, '# cv2.imshow — skipped');
+
+    await pyodide.runPythonAsync(safeCode);
+
+    // Display output
+    const outDiv = document.createElement('div');
+    outDiv.className = 'code-output';
+    outDiv.innerHTML = '<div class="code-output-header">输出结果</div><pre>' + (output || '(无输出)') + '</pre>';
+    if (output) outDiv.classList.add('has-output');
+    pre.parentElement.appendChild(outDiv);
+  } catch (e) {
+    const outDiv = document.createElement('div');
+    outDiv.className = 'code-output error';
+    outDiv.innerHTML = '<div class="code-output-header">运行错误</div><pre>' + escapeHtml(e.message || String(e)) + '</pre>';
+    pre.parentElement.appendChild(outDiv);
+  } finally {
+    btn.textContent = '▶ 运行';
+    btn.disabled = false;
+  }
+}
+
 function injectCodeCopyButtons(container) {
   container.querySelectorAll('pre').forEach(pre => {
-    if (pre.closest('.code-block-wrapper')) return; // already wrapped
+    if (pre.closest('.code-block-wrapper')) return;
     const wrapper = document.createElement('div');
     wrapper.className = 'code-block-wrapper';
     pre.parentNode.insertBefore(wrapper, pre);
     wrapper.appendChild(pre);
+
     const btn = document.createElement('button');
     btn.className = 'code-copy-btn';
     btn.textContent = '复制';
@@ -1405,6 +1568,21 @@ function injectCodeCopyButtons(container) {
       });
     });
     wrapper.appendChild(btn);
+
+    // Add Run button for Python code blocks
+    const codeEl = pre.querySelector('code');
+    const codeText = codeEl ? (codeEl.innerText || codeEl.textContent) : pre.innerText;
+    const isPython = codeText && (
+      (codeEl && codeEl.className && codeEl.className.includes('python')) ||
+      codeText.match(/^(import |from |def |class |# |print\(|np\.|plt\.|pd\.|if __name__)/m)
+    );
+    if (isPython && typeof loadPyodide !== 'undefined') {
+      const runBtn = document.createElement('button');
+      runBtn.className = 'code-run-btn';
+      runBtn.textContent = '▶ 运行';
+      runBtn.addEventListener('click', () => runCodeBlock(pre, runBtn));
+      wrapper.appendChild(runBtn);
+    }
   });
 }
 
@@ -1829,6 +2007,36 @@ function renderSubmissionChecklist(checklist) {
   render();
 }
 
+// ——— Visualization Template Library ———
+function renderVizTemplates(templates) {
+  const container = document.getElementById('viz-templates');
+  if (!container) return;
+
+  container.innerHTML = templates.map((t, i) => `
+    <details class="viz-template">
+      <summary class="viz-template-header">
+        <span class="viz-template-name">${escapeHtml(t.name)}</span>
+        <span class="viz-template-use">${escapeHtml(t.use)}</span>
+      </summary>
+      <div class="viz-template-body">
+        <button class="btn-sm viz-copy-btn" data-viz="${i}">复制代码</button>
+        <pre><code>${escapeHtml(t.code)}</code></pre>
+      </div>
+    </details>
+  `).join('');
+
+  // Copy button handlers
+  container.querySelectorAll('.viz-copy-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const idx = parseInt(btn.dataset.viz);
+      navigator.clipboard.writeText(templates[idx].code).then(() => {
+        btn.textContent = '已复制!';
+        setTimeout(() => btn.textContent = '复制代码', 1500);
+      }).catch(() => showToast('复制失败'));
+    });
+  });
+}
+
 // ============================================================
 // Update keyboard shortcut — add Paper tab (6)
 // ============================================================
@@ -1904,6 +2112,67 @@ function sendToPaper(index) {
 }
 
 // ============================================================
+// Project Export Bundle — package all content as ZIP
+// ============================================================
+async function exportProjectBundle() {
+  const btn = document.getElementById('qa-export-btn');
+  const content = getActiveContent();
+  if (!content || !content.innerText.trim()) {
+    showToast('没有可导出的内容'); return;
+  }
+
+  const fullText = content.innerText;
+
+  // Extract code blocks as .py files
+  const codeBlocks = [];
+  content.querySelectorAll('pre code').forEach((code, i) => {
+    const lang = code.className.replace('language-', '') || 'py';
+    codeBlocks.push({ name: `code_${i+1}.${lang === 'python' ? 'py' : lang}`, text: code.innerText });
+  });
+
+  // Extract reference section
+  const refMatch = fullText.match(/参考文献|References|Reference[\s\S]{0,2000}/i);
+  const refText = refMatch ? refMatch[0] : '';
+
+  // Build ZIP
+  const zip = new JSZip();
+  zip.file('paper.md', fullText);
+  if (refText) zip.file('references.txt', refText);
+  codeBlocks.forEach(cb => zip.file(cb.name, cb.text));
+
+  // Try to include LaTeX if we have it
+  const latexContent = content.dataset.latex || '';
+  if (latexContent) zip.file('paper.tex', latexContent);
+
+  // Add a README
+  zip.file('README.txt',
+    '项目导出包\n' +
+    '==========\n' +
+    'paper.md         - 完整论文 (Markdown)\n' +
+    'references.txt   - 参考文献\n' +
+    (latexContent ? 'paper.tex        - LaTeX 源码\n' : '') +
+    codeBlocks.map(cb => `${cb.name.padEnd(17)}- Python 代码`).join('\n') +
+    '\n\n生成时间: ' + new Date().toLocaleString('zh-CN')
+  );
+
+  btn.innerHTML = '⏳ 打包中...'; btn.disabled = true;
+  try {
+    const blob = await zip.generateAsync({ type: 'blob' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'MMA_Project_' + new Date().toISOString().slice(0, 10) + '.zip';
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast('导出成功');
+  } catch (e) {
+    showToast('导出失败');
+  } finally {
+    btn.innerHTML = '📦 导出项目'; btn.disabled = false;
+  }
+}
+
+// ============================================================
 // Quick Actions Bar — prominent edit + verify buttons
 // ============================================================
 function injectQuickActions() {
@@ -1923,6 +2192,7 @@ function injectQuickActions() {
     <button class="quick-action-btn score-action" id="qa-score-btn" title="按 COMAP 评审标准打分">🎯 论文评分</button>
     <button class="quick-action-btn figures-action" id="qa-figures-btn" title="智能推荐论文需要的图表并生成代码">📈 图表建议</button>
     <button class="quick-action-btn compare-action" id="qa-compare-btn" title="与上一版论文并排对比分析">🔄 对比论文</button>
+    <button class="quick-action-btn export-action" id="qa-export-btn" title="打包导出论文.md + 代码.py + 参考文献.bib">📦 导出项目</button>
   `;
 
   // Insert after the result toolbar
@@ -1943,6 +2213,7 @@ function injectQuickActions() {
   bar.querySelector('#qa-score-btn').addEventListener('click', runPaperScore);
   bar.querySelector('#qa-figures-btn').addEventListener('click', runFigureSuggest);
   bar.querySelector('#qa-compare-btn').addEventListener('click', runPaperCompare);
+  bar.querySelector('#qa-export-btn').addEventListener('click', exportProjectBundle);
 }
 
 let editModeActive = false;

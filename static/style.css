@@ -326,6 +326,9 @@ main { max-width: 960px; margin: 0 auto; padding: 32px 24px 64px; }
   font-size: 20px; font-weight: 700; margin-bottom: 20px; letter-spacing: -.02em;
   padding-bottom: 10px; border-bottom: 1px solid var(--border);
 }
+.section-desc {
+  font-size: 13px; color: var(--text-secondary); margin: -16px 0 16px 0;
+}
 
 /* ============================================================
    Filter bar
@@ -601,6 +604,34 @@ footer { text-align: center; padding: 24px; color: var(--text-secondary); font-s
 }
 .code-block-wrapper:hover .code-copy-btn { opacity: 1; }
 .code-block-wrapper .code-copy-btn:hover { background: rgba(255,255,255,.15); color: #fff; }
+.code-block-wrapper .code-run-btn {
+  position: absolute; top: 8px; right: 68px;
+  padding: 4px 10px; border: 1px solid rgba(76,175,80,.4);
+  border-radius: 5px; background: rgba(76,175,80,.15);
+  color: rgba(76,175,80,.8); font-size: 11px; cursor: pointer;
+  transition: all var(--transition); opacity: 0;
+}
+.code-block-wrapper:hover .code-run-btn { opacity: 1; }
+.code-block-wrapper .code-run-btn:hover { background: rgba(76,175,80,.3); color: #4caf50; }
+
+/* Code output */
+.code-output {
+  margin-top: 8px; border: 1px solid var(--border);
+  border-radius: 6px; overflow: hidden;
+}
+.code-output-header {
+  padding: 6px 12px; font-size: 11px; font-weight: 600;
+  background: var(--accent-light); color: var(--accent);
+}
+.code-output pre {
+  margin: 0; padding: 12px; background: #1e1e1e; color: #d4d4d4;
+  font-size: 12px; line-height: 1.5; max-height: 300px; overflow: auto;
+  border-radius: 0;
+}
+.code-output.error .code-output-header {
+  background: #fef2f2; color: #dc2626;
+}
+.code-output.error pre { color: #f87171; }
 
 /* ============================================================
    Model comparison
@@ -1153,6 +1184,74 @@ footer { text-align: center; padding: 24px; color: var(--text-secondary); font-s
 }
 
 /* ============================================================
+   Visualization Templates
+   ============================================================ */
+.viz-template {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  margin-bottom: 8px;
+  overflow: hidden;
+}
+.viz-template-header {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 16px; cursor: pointer;
+  background: var(--bg); font-size: 14px;
+  user-select: none;
+  transition: background .2s;
+}
+.viz-template-header:hover { background: var(--accent-light); }
+.viz-template-name {
+  font-weight: 700; color: var(--accent); min-width: 140px;
+}
+.viz-template-use {
+  color: var(--text-secondary); font-size: 13px;
+}
+.viz-template-body {
+  padding: 12px 16px 16px;
+  border-top: 1px solid var(--border);
+  position: relative;
+}
+.viz-template-body .viz-copy-btn {
+  position: absolute; top: 12px; right: 16px; z-index: 2;
+}
+.viz-template-body pre {
+  margin: 0; max-height: 400px; overflow: auto;
+  background: #1e1e1e; color: #d4d4d4; border-radius: 6px;
+  padding: 16px; font-size: 12px; line-height: 1.5;
+}
+.viz-template-body code {
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+}
+.viz-template[open] .viz-template-header {
+  background: var(--accent-light); border-bottom: 1px solid var(--accent);
+}
+
+/* ============================================================
+   Paper Analysis Upload
+   ============================================================ */
+.paper-upload-area {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+}
+.upload-hint {
+  font-size: 12px; color: var(--text-secondary);
+  max-width: 300px; line-height: 1.4;
+}
+.paper-analysis-result {
+  margin-top: 20px; padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+.paper-analysis-result h2 { font-size: 17px; margin: 16px 0 8px; }
+.paper-analysis-result h3 { font-size: 15px; margin: 12px 0 6px; }
+.paper-analysis-result ul, .paper-analysis-result ol {
+  margin-left: 20px; margin-bottom: 12px;
+}
+.paper-analysis-result li { margin-bottom: 4px; line-height: 1.5; }
+.paper-analysis-result blockquote {
+  border-left: 3px solid var(--accent); padding: 8px 14px;
+  margin: 10px 0; background: var(--accent-light); border-radius: 0 6px 6px 0;
+}
+
+/* ============================================================
    Verification reports — reference & math checks
    ============================================================ */
 .verify-report {
@@ -1473,6 +1572,15 @@ footer { text-align: center; padding: 24px; color: var(--text-secondary); font-s
 [data-theme="dark"] .quick-action-btn.compare-action:hover {
   background: #042f2e;
   color: #2dd4bf;
+}
+.quick-action-btn.export-action:hover {
+  border-color: #7c3aed;
+  background: #f5f3ff;
+  color: #6d28d9;
+}
+[data-theme="dark"] .quick-action-btn.export-action:hover {
+  background: #1e1040;
+  color: #a78bfa;
 }
 
 /* Paper score report */

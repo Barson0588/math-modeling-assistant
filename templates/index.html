@@ -277,6 +277,25 @@
     <h2 class="section-title">提交前最后检查</h2>
     <div id="submission-checklist" class="submission-checklist"></div>
   </div>
+
+  <div class="card">
+    <h2 class="section-title">可视化模板库</h2>
+    <p class="section-desc">竞赛常用图表的 Python 代码模板，点击展开 → 复制 → 改参数即用</p>
+    <div id="viz-templates"></div>
+  </div>
+
+  <div class="card">
+    <h2 class="section-title">获奖论文分析</h2>
+    <p class="section-desc">上传往届 O 奖/国一论文 PDF，AI 拆解其结构、创新点、写作技巧</p>
+    <div class="paper-upload-area" id="paper-upload-area">
+      <input type="file" id="paper-file-input" accept=".pdf" hidden>
+      <button class="btn-primary" id="paper-upload-btn" onclick="document.getElementById('paper-file-input').click()">
+        选择 PDF 文件
+      </button>
+      <span class="upload-hint" id="upload-hint">支持标准 PDF（非扫描图片），最多 20 页</span>
+    </div>
+    <div id="paper-analysis-result" class="paper-analysis-result" hidden></div>
+  </div>
 </section>
 
 <!-- ============ TAB 5: Team Roles ============ -->
@@ -297,6 +316,8 @@
 </footer>
 
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+<script src="https://cdn.jsdelivr.net/pyodide/v0.25.0/full/pyodide.js"></script>
 <script src="/static/script.js"></script>
 <script>
 if ('serviceWorker' in navigator) {

@@ -10,6 +10,7 @@ from src.prompts import (
     SYSTEM_MODEL_RECOMMEND, MODEL_RECOMMEND_PROMPT,
     SYSTEM_FIGURE_SUGGEST, FIGURE_SUGGEST_PROMPT,
     SYSTEM_PAPER_COMPARE, PAPER_COMPARE_PROMPT,
+    SYSTEM_PAPER_ANALYZE, PAPER_ANALYZE_PROMPT,
 )
 from datetime import date
 from src.llm_client import generate_response, generate_stream
@@ -730,6 +731,45 @@ def compare_papers():
         return jsonify({"content": result})
     except Exception as e:
         return jsonify({"error": f"论文对比失败: {str(e)}"}), 500
+
+
+# ===== API: Winning Paper Analysis =====
+
+@app.route("/api/analyze-paper", methods=["POST"])
+def analyze_paper():
+    if "file" not in request.files:
+        return jsonify({"error": "请上传 PDF 文件"}), 400
+
+    file = request.files["file"]
+    if not file.filename or not file.filename.lower().endswith(".pdf"):
+        return jsonify({"error": "仅支持 PDF 格式"}), 400
+
+    try:
+        from PyPDF2 import PdfReader
+        import io
+        pdf_bytes = io.BytesIO(file.read())
+        reader = PdfReader(pdf_bytes)
+
+        text_parts = []
+        for page in reader.pages[:20]:  # limit to 20 pages
+            t = page.extract_text()
+            if t:
+                text_parts.append(t)
+        full_text = "\n\n".join(text_parts)
+
+        if len(full_text) < 100:
+            return jsonify({"error": "PDF 文本提取失败，请确认文件为标准 PDF（非扫描图片）"}), 400
+
+        # Truncate to reasonable size for LLM
+        max_chars = 12000
+        if len(full_text) > max_chars:
+            full_text = full_text[:max_chars] + "\n\n... [内容已截断]"
+
+        user_prompt = PAPER_ANALYZE_PROMPT.format(content=full_text)
+        result = generate_response(SYSTEM_PAPER_ANALYZE, user_prompt, max_tokens=3000)
+        return jsonify({"content": result})
+    except Exception as e:
+        return jsonify({"error": f"论文分析失败: {str(e)}"}), 500
 
 
 if __name__ == "__main__":
