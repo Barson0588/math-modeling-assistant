@@ -1046,6 +1046,9 @@ function renderHistory() {
         ${h.tags.map(t => `<span class="history-tag" onclick="event.stopPropagation();removeTag(${history.indexOf(h)},'${escapeHtml(t)}')">${escapeHtml(t)}<span class="tag-remove">&times;</span></span>`).join('')}
         <button class="history-tag-add" onclick="event.stopPropagation();addTagPrompt(${history.indexOf(h)})">+ 标签</button>
       </div>
+      <div class="history-item-actions">
+        <button class="btn-sm" onclick="event.stopPropagation();sendToPaper(${history.indexOf(h)})" title="将此方案的题目填入论文排版并自动生成完整论文">→ 生成完整论文</button>
+      </div>
     </div>
   `).join('')) + `
     <div class="history-actions">
@@ -1829,6 +1832,163 @@ const _origInjectCode = injectCodeCopyButtons;
 injectCodeCopyButtons = function(container) {
   _origInjectCode(container);
   injectDataSourceHighlights(container);
+};
+
+// ============================================================
+// History → Paper Tab Sync
+// ============================================================
+function sendToPaper(index) {
+  const history = getHistory();
+  const item = history[index];
+  if (!item) return;
+
+  // Fill paper tab inputs with this history's problem
+  const paperProblem = document.getElementById('paper-problem');
+  const paperReq = document.getElementById('paper-requirements');
+  const paperContest = document.getElementById('paper-contest-type');
+  const paperType = document.getElementById('paper-problem-type');
+
+  // Try to reconstruct the full problem from history
+  paperProblem.value = item.problem;
+  paperReq.value = '';
+  paperContest.value = item.contestType || 'MCM/ICM';
+  paperType.value = item.problemType || 'A';
+
+  // Switch to paper tab
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelector('[data-tab="paper"]').classList.add('active');
+  document.getElementById('tab-paper').classList.add('active');
+
+  // Scroll to paper tab and trigger generation
+  document.getElementById('tab-paper').scrollIntoView({ behavior: 'smooth' });
+  setTimeout(() => paperGenerateBtn.click(), 400);
+  showToast('已同步题目到论文排版，开始生成完整论文...');
+}
+
+// ============================================================
+// Plagiarism / Originality Check Button
+// ============================================================
+function injectPlagiarismButton() {
+  const actions = document.querySelector('.result-actions');
+  if (!actions || actions.querySelector('.plagiarism-btn')) return;
+
+  const btn = document.createElement('button');
+  btn.className = 'btn-sm plagiarism-btn';
+  btn.textContent = 'AI 查重';
+  btn.title = '分析论文原创性，检测模板化内容';
+  btn.addEventListener('click', async () => {
+    const resultContent = document.getElementById('result-content');
+    const text = resultContent.innerText;
+    if (!text.trim()) { showToast('没有可查重的内容'); return; }
+
+    btn.textContent = '查重中...';
+    btn.disabled = true;
+
+    try {
+      const res = await fetch('/api/check-plagiarism', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: text }),
+      });
+      const data = await res.json();
+
+      let existing = resultContent.querySelector('.plagiarism-report');
+      if (existing) existing.remove();
+
+      const div = document.createElement('div');
+      div.className = 'verify-report plagiarism-report';
+      if (data.error) {
+        div.innerHTML = `<p class="error-msg">${escapeHtml(data.error)}</p>`;
+      } else {
+        div.innerHTML = `
+          <h3>原创性分析报告</h3>
+          <div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">AI 辅助查重 — 检测模板化内容和潜在雷同风险，结果仅供参考</div>
+          ${marked.parse(data.content)}
+        `;
+      }
+      resultContent.appendChild(div);
+      div.scrollIntoView({ behavior: 'smooth' });
+    } catch (e) {
+      showToast('查重分析失败');
+    } finally {
+      btn.textContent = 'AI 查重';
+      btn.disabled = false;
+    }
+  });
+  actions.appendChild(btn);
+}
+
+// Inject plagiarism button alongside other result buttons
+const _origInjectVerifyRefs = injectVerifyRefsButton;
+injectVerifyRefsButton = function() {
+  _origInjectVerifyRefs();
+  injectPlagiarismButton();
+};
+
+// ============================================================
+// Edit Mode Toggle — for generated paper content
+// ============================================================
+let editModeActive = false;
+let editModeContent = '';
+
+function injectEditToggle() {
+  const actions = document.querySelector('.result-actions');
+  if (!actions || actions.querySelector('.edit-toggle-btn')) return;
+
+  const btn = document.createElement('button');
+  btn.className = 'btn-sm edit-toggle-btn';
+  btn.textContent = '编辑';
+  btn.title = '切换编辑/预览模式';
+  btn.addEventListener('click', () => {
+    const container = document.getElementById('result-content') || document.getElementById('paper-content');
+    if (!container) return;
+
+    if (!editModeActive) {
+      // Enter edit mode
+      editModeActive = true;
+      editModeContent = container.innerText;
+      btn.textContent = '预览';
+      btn.style.background = 'var(--amber)';
+      btn.style.color = '#fff';
+      btn.style.borderColor = 'var(--amber)';
+
+      // Replace rendered content with editable textarea
+      const textarea = document.createElement('textarea');
+      textarea.id = 'edit-textarea';
+      textarea.className = 'edit-textarea';
+      textarea.value = editModeContent;
+      container.innerHTML = '';
+      container.appendChild(textarea);
+      textarea.focus();
+    } else {
+      // Exit edit mode — re-render
+      editModeActive = false;
+      const textarea = document.getElementById('edit-textarea');
+      const newContent = textarea ? textarea.value : editModeContent;
+      btn.textContent = '编辑';
+      btn.style.background = '';
+      btn.style.color = '';
+      btn.style.borderColor = '';
+
+      container.innerHTML = marked.parse(newContent);
+      injectCodeCopyButtons(container);
+      injectDisclaimer(container);
+      injectVerificationChecklist(container);
+      injectExplainButtons(container);
+      buildTOC(container);
+      injectDataSourceHighlights(container);
+      showToast('内容已更新');
+    }
+  });
+  actions.appendChild(btn);
+}
+
+// Inject edit toggle alongside result actions
+const _origInjectPlagiarism = injectPlagiarismButton;
+injectPlagiarismButton = function() {
+  _origInjectPlagiarism();
+  injectEditToggle();
 };
 
 // Actually the tab keys are defined inline in the event listener.

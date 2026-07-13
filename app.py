@@ -3,7 +3,7 @@ from src.prompts import (
     ROLES_INFO, SYSTEM_MCM_EN, SYSTEM_MCM_CN, SYSTEM_AI_REPORT,
     PAPER_PROMPT, AI_REPORT_PROMPT, LATEX_TEMPLATE,
     SYSTEM_PAPER, PAPER_FULL_PROMPT, SYSTEM_EXPLAIN, PAPER_LATEX_PROMPT,
-    SYSTEM_MATH_VERIFY,
+    SYSTEM_MATH_VERIFY, SYSTEM_PLAGIARISM,
 )
 from datetime import date
 from src.llm_client import generate_response, generate_stream
@@ -519,6 +519,35 @@ Please provide a structured verification report."""
         return jsonify({"content": result})
     except Exception as e:
         return jsonify({"error": f"数学验证失败: {str(e)}"}), 500
+
+
+# ===== API: Plagiarism / Originality Check =====
+
+@app.route("/api/check-plagiarism", methods=["POST"])
+def check_plagiarism():
+    data = request.get_json()
+    content = data.get("content", "").strip()
+
+    if not content:
+        return jsonify({"error": "请提供论文内容"}), 400
+
+    if len(content) < 200:
+        return jsonify({"error": "论文内容过短，至少需要 200 字"}), 400
+
+    # Take first ~5000 chars for analysis
+    analysis_text = content[:5000]
+
+    user_prompt = f"""Please analyze the following mathematical modeling paper for originality and plagiarism risks.
+
+{analysis_text}
+
+Provide a section-by-section originality assessment with specific flagged passages and rewrite suggestions."""
+
+    try:
+        result = generate_response(SYSTEM_PLAGIARISM, user_prompt, max_tokens=2000)
+        return jsonify({"content": result})
+    except Exception as e:
+        return jsonify({"error": f"查重分析失败: {str(e)}"}), 500
 
 
 if __name__ == "__main__":

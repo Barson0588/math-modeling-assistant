@@ -1209,6 +1209,45 @@ footer { text-align: center; padding: 24px; color: var(--text-secondary); font-s
 }
 
 /* ============================================================
+   History item actions
+   ============================================================ */
+.history-item-actions {
+  margin-top: 8px; padding-top: 8px;
+  border-top: 1px solid var(--border);
+  display: flex; gap: 6px;
+}
+.history-item-actions .btn-sm {
+  font-size: 11px; padding: 3px 10px;
+}
+
+/* ============================================================
+   Edit mode textarea
+   ============================================================ */
+.edit-textarea {
+  width: 100%; min-height: 60vh;
+  padding: 20px; border: 2px solid var(--amber);
+  border-radius: var(--radius-sm);
+  font-family: var(--mono); font-size: 14px; line-height: 1.7;
+  background: var(--surface); color: var(--text);
+  resize: vertical;
+  transition: border-color var(--transition);
+}
+.edit-textarea:focus {
+  outline: none; border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
+/* ============================================================
+   Plagiarism report
+   ============================================================ */
+.plagiarism-report h4 {
+  font-size: 14px; font-weight: 700; margin: 12px 0 6px;
+}
+.plagiarism-report ul { padding-left: 20px; margin: 6px 0; }
+.plagiarism-report li { margin: 4px 0; font-size: 13px; }
+.plagiarism-report strong { color: var(--accent); }
+
+/* ============================================================
    Responsive — improved mobile experience
    ============================================================ */
 @media (max-width: 640px) {
