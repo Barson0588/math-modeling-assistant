@@ -4,13 +4,23 @@
 
 输入竞赛题目 → 获取论文框架、数学转编程思路、可运行 Python 代码。附带 33 个模型参考库、历年真题、4 天竞赛时间线指南。
 
-## 下载 (macOS)
+## 下载
+
+### macOS
 
 [**下载 MathModelingAssistant-1.0.0.dmg**](https://github.com/chengfengyi-falcon/math-modeling-assistant/releases/download/v1.0.0/MathModelingAssistant-1.0.0.dmg)
 
 1. 下载 DMG，双击打开，将 `MathModelingAssistant.app` 拖入 `Applications`
 2. 首次启动时，应用会自动打开配置文件，填入 [DeepSeek API Key](https://platform.deepseek.com/api_keys) 后重启应用
 3. 如遇到"无法验证开发者"提示，前往 **系统设置 → 隐私与安全性 → 仍要打开**
+
+### Windows
+
+1. 克隆仓库: `git clone https://github.com/chengfengyi-falcon/math-modeling-assistant.git`
+2. 安装依赖: `pip install pyinstaller -r requirements.txt`
+3. 运行 `win_build.bat`
+4. 在 `dist\MathModelingAssistant\` 中找到 `MathModelingAssistant.exe`，双击运行
+5. 首次启动时会弹出配置文件，填入 [DeepSeek API Key](https://platform.deepseek.com/api_keys) 后重启应用
 
 > 更多版本见 [Releases 页面](https://github.com/chengfengyi-falcon/math-modeling-assistant/releases)
 
@@ -102,8 +112,11 @@ math-modeling-assistant/
 ├── app.py                 # Flask 主程序
 ├── config.py              # 配置 (从 .env 读取 API Key)
 ├── launcher.py            # macOS App 启动器
-├── mac_build.spec         # PyInstaller 打包配置
-├── mac_build.sh           # DMG 构建脚本
+├── mac_build.spec         # macOS PyInstaller 打包配置
+├── mac_build.sh           # macOS DMG 构建脚本
+├── launcher_win.pyw       # Windows 启动器 (无控制台)
+├── win_build.spec         # Windows PyInstaller 打包配置
+├── win_build.bat          # Windows EXE 构建脚本
 ├── requirements.txt       # Python 依赖
 ├── .env                   # API Key (git ignored)
 ├── src/
