@@ -1248,6 +1248,104 @@ footer { text-align: center; padding: 24px; color: var(--text-secondary); font-s
 .plagiarism-report strong { color: var(--accent); }
 
 /* ============================================================
+   Quick Actions Bar — prominent edit + verify buttons
+   ============================================================ */
+.quick-actions-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 12px 16px;
+  margin: 16px 0 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+}
+.quick-actions-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-right: 4px;
+  white-space: nowrap;
+}
+.quick-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 18px;
+  border: 2px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition);
+  white-space: nowrap;
+  font-family: var(--font);
+}
+.quick-action-btn:hover {
+  border-color: var(--accent);
+  background: var(--accent-light);
+  color: var(--accent);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow);
+}
+.quick-action-btn:active {
+  transform: translateY(0);
+}
+.quick-action-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+.quick-action-btn.active {
+  background: var(--amber);
+  color: #fff;
+  border-color: var(--amber);
+}
+/* Per-button accent colors */
+.quick-action-btn.edit-action:hover {
+  border-color: var(--purple);
+  background: var(--purple-light);
+  color: var(--purple);
+}
+.quick-action-btn.plagiarism-action:hover {
+  border-color: var(--red);
+  background: var(--red-light);
+  color: var(--red);
+}
+.quick-action-btn.verify-refs-action:hover {
+  border-color: var(--green);
+  background: var(--green-light);
+  color: var(--green);
+}
+.quick-action-btn.verify-math-action:hover {
+  border-color: var(--accent);
+  background: var(--accent-light);
+  color: var(--accent);
+}
+
+@media (max-width: 640px) {
+  .quick-actions-bar {
+    padding: 10px 12px;
+    gap: 6px;
+  }
+  .quick-actions-label {
+    width: 100%;
+    margin-bottom: 2px;
+  }
+  .quick-action-btn {
+    font-size: 13px;
+    padding: 8px 14px;
+    flex: 1;
+  }
+}
+
+/* ============================================================
    Responsive — improved mobile experience
    ============================================================ */
 @media (max-width: 640px) {

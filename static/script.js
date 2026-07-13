@@ -620,9 +620,8 @@ generateBtn.addEventListener('click', async () => {
     injectDisclaimer(resultContent);
     injectVerificationChecklist(resultContent);
     injectExplainButtons(resultContent);
+    injectQuickActions();
     injectScholarButton();
-    injectVerifyRefsButton();
-    injectVerifyMathButton();
     if (!errorOccurred && fullContent) {
       saveHistory(problem, contestType, problemType, fullContent);
       saveDraft(problem, contestType, problemType, fullContent);
@@ -750,6 +749,8 @@ const paperGenerateBtn = document.getElementById('paper-generate-btn');
 const paperResult = document.getElementById('paper-result');
 const paperContent = document.getElementById('paper-content');
 const paperResultLabel = document.getElementById('paper-result-label');
+const paperHistoryCard = document.getElementById('paper-history-card');
+const paperHistoryList = document.getElementById('paper-history-list');
 
 function syncGeneratorToPaper() {
   // Copy problem from generator if paper fields are empty
@@ -851,9 +852,9 @@ paperGenerateBtn.addEventListener('click', async () => {
     injectDisclaimer(paperContent);
     injectVerificationChecklist(paperContent);
     injectExplainButtons(paperContent);
-    // Note: scholar + verify buttons inject into .result-actions, which
-    // doesn't exist in the paper tab. Skip those for paper.
+    injectQuickActions();
     if (!errorOccurred && fullContent) {
+      savePaperHistory(problem, contestType, problemType, fullContent);
       showToast('论文生成完成');
     }
   } catch (e) {
@@ -1094,6 +1095,10 @@ function restoreHistory(index) {
   resultContent.innerHTML = marked.parse(item.content);
   injectCodeCopyButtons(resultContent);
   buildTOC(resultContent);
+  injectDisclaimer(resultContent);
+  injectVerificationChecklist(resultContent);
+  injectExplainButtons(resultContent);
+  injectQuickActions();
   resultDiv.scrollIntoView({ behavior: 'smooth' });
   showToast('已恢复历史生成结果');
 }
@@ -1109,6 +1114,144 @@ function clearHistory() {
 }
 
 renderHistory();
+
+// ============================================================
+// Paper History (localStorage) — separate from Generator history
+// ============================================================
+const PAPER_HISTORY_KEY = 'mma-paper-history';
+const PAPER_MAX_HISTORY = 20;
+let paperHistoryFilter = '';
+
+function getPaperHistory() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(PAPER_HISTORY_KEY) || '[]');
+    return raw.map(h => ({
+      problem: h.problem || '',
+      contestType: h.contestType || 'MCM/ICM',
+      problemType: h.problemType || 'A',
+      content: h.content || '',
+      time: h.time || new Date().toISOString(),
+      tags: h.tags || [],
+      starred: h.starred || false,
+    }));
+  }
+  catch { return []; }
+}
+
+function savePaperHistory(problem, contestType, problemType, content) {
+  const history = getPaperHistory();
+  history.unshift({
+    problem: problem.slice(0, 120),
+    contestType,
+    problemType,
+    content,
+    time: new Date().toISOString(),
+    tags: [],
+    starred: false,
+  });
+  const starred = history.filter(h => h.starred);
+  const unstarred = history.filter(h => !h.starred).slice(0, PAPER_MAX_HISTORY);
+  const merged = [...starred, ...unstarred].sort((a, b) => new Date(b.time) - new Date(a.time));
+  localStorage.setItem(PAPER_HISTORY_KEY, JSON.stringify(merged));
+  renderPaperHistory();
+}
+
+function renderPaperHistory() {
+  const history = getPaperHistory();
+  if (!paperHistoryCard || !paperHistoryList) return;
+  if (history.length === 0) { paperHistoryCard.hidden = true; return; }
+
+  let filtered = history;
+  if (paperHistoryFilter) {
+    const q = paperHistoryFilter.toLowerCase();
+    filtered = history.filter(h =>
+      h.problem.toLowerCase().includes(q) ||
+      h.tags.some(t => t.toLowerCase().includes(q)) ||
+      h.contestType.toLowerCase().includes(q)
+    );
+  }
+
+  paperHistoryCard.hidden = false;
+  paperHistoryList.innerHTML = `
+    <input type="text" class="history-search" placeholder="搜索论文记录..." value="${escapeHtml(paperHistoryFilter)}" oninput="paperHistoryFilter=this.value;renderPaperHistory()">
+  ` + (filtered.length === 0 ? '<p class="history-empty">没有匹配的历史记录</p>' :
+    filtered.map((h, i) => {
+      const realIdx = history.indexOf(h);
+      return `
+    <div class="history-item">
+      <div class="history-item-top">
+        <button class="history-item-star${h.starred ? ' starred' : ''}" onclick="event.stopPropagation();togglePaperStar(${realIdx})" title="${h.starred ? '取消收藏' : '收藏'}">${h.starred ? '★' : '☆'}</button>
+        <span class="history-item-problem" onclick="restorePaperHistory(${realIdx})">${escapeHtml(h.problem)}</span>
+        <span class="history-time-rel">${timeAgo(h.time)}</span>
+      </div>
+      <div class="history-item-meta">${h.contestType} · ${h.problemType} 题 · ${h.content.length} 字</div>
+      <div class="history-item-tags">
+        ${h.tags.map(t => `<span class="history-tag" onclick="event.stopPropagation();removePaperTag(${realIdx},'${escapeHtml(t)}')">${escapeHtml(t)}<span class="tag-remove">&times;</span></span>`).join('')}
+        <button class="history-tag-add" onclick="event.stopPropagation();addPaperTagPrompt(${realIdx})">+ 标签</button>
+      </div>
+    </div>`;
+    }).join('')) + `
+    <div class="history-actions">
+      <button class="btn-sm" onclick="event.stopPropagation();clearPaperHistory()">清除未收藏记录</button>
+    </div>
+  `;
+}
+
+function restorePaperHistory(index) {
+  const item = getPaperHistory()[index];
+  if (!item) return;
+  paperResult.classList.add('visible');
+  paperResultLabel.textContent = '历史论文';
+  paperContent.innerHTML = marked.parse(item.content);
+  injectCodeCopyButtons(paperContent);
+  injectDisclaimer(paperContent);
+  injectVerificationChecklist(paperContent);
+  injectExplainButtons(paperContent);
+  injectQuickActions();
+  paperResult.scrollIntoView({ behavior: 'smooth' });
+  showToast('已恢复论文生成记录');
+}
+
+function togglePaperStar(index) {
+  const history = getPaperHistory();
+  if (index < 0 || index >= history.length) return;
+  history[index].starred = !history[index].starred;
+  localStorage.setItem(PAPER_HISTORY_KEY, JSON.stringify(history));
+  renderPaperHistory();
+}
+
+function addPaperTagPrompt(index) {
+  const history = getPaperHistory();
+  if (index < 0 || index >= history.length) return;
+  const tag = prompt('输入标签名:');
+  if (tag && tag.trim()) {
+    if (!history[index].tags.includes(tag.trim())) {
+      history[index].tags.push(tag.trim());
+    }
+    localStorage.setItem(PAPER_HISTORY_KEY, JSON.stringify(history));
+    renderPaperHistory();
+  }
+}
+
+function removePaperTag(index, tag) {
+  const history = getPaperHistory();
+  if (index < 0 || index >= history.length) return;
+  history[index].tags = history[index].tags.filter(t => t !== tag);
+  localStorage.setItem(PAPER_HISTORY_KEY, JSON.stringify(history));
+  renderPaperHistory();
+}
+
+function clearPaperHistory() {
+  const history = getPaperHistory();
+  const starred = history.filter(h => h.starred);
+  localStorage.setItem(PAPER_HISTORY_KEY, JSON.stringify(starred));
+  paperHistoryFilter = '';
+  renderPaperHistory();
+  if (starred.length === 0) paperHistoryCard.hidden = true;
+  showToast(starred.length > 0 ? `已清除未收藏记录，保留 ${starred.length} 条收藏` : '论文历史已清除');
+}
+
+renderPaperHistory();
 
 // ============================================================
 // Session Restore — auto-save draft to survive page refresh
@@ -1679,131 +1822,6 @@ function renderSubmissionChecklist(checklist) {
   const origHandler = document.onkeydown;
 })();
 
-// ============================================================
-// Reference Verification — check every citation against Scholar
-// ============================================================
-function injectVerifyRefsButton() {
-  const actions = document.querySelector('.result-actions');
-  if (!actions || actions.querySelector('.verify-refs-btn')) return;
-
-  const btn = document.createElement('button');
-  btn.className = 'btn-sm verify-refs-btn';
-  btn.textContent = '验证引用';
-  btn.title = '交叉验证参考文献是否真实存在';
-  btn.addEventListener('click', async () => {
-    const resultContent = document.getElementById('result-content');
-    const text = resultContent.innerText;
-    if (!text.trim()) { showToast('没有可验证的内容'); return; }
-
-    btn.textContent = '验证中...';
-    btn.disabled = true;
-
-    try {
-      const res = await fetch('/api/verify-references', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: text }),
-      });
-      const data = await res.json();
-
-      let existing = resultContent.querySelector('.verify-report');
-      if (existing) existing.remove();
-
-      const div = document.createElement('div');
-      div.className = 'verify-report';
-      if (data.error) {
-        div.innerHTML = `<p class="error-msg">${escapeHtml(data.error)}</p>`;
-      } else {
-        const verifiedIcon = '✓';
-        const fakeIcon = '✗';
-        div.innerHTML = `
-          <h3>引用验证报告</h3>
-          <div class="verify-summary">
-            <span class="verify-stat verified">${verifiedIcon} ${data.verified} 条已验证</span>
-            <span class="verify-stat fake">${fakeIcon} ${data.fake} 条未找到</span>
-            <span class="verify-stat">共 ${data.total} 条</span>
-          </div>
-          ${data.results.map(r => `
-            <div class="verify-ref-item ${r.status}">
-              <div class="verify-ref-status">${r.status === 'verified' ? verifiedIcon + ' 已验证' : fakeIcon + ' 未找到匹配'}</div>
-              <div class="verify-ref-original"><strong>原文:</strong> ${escapeHtml(r.original).slice(0, 150)}</div>
-              ${r.status === 'verified' ? `
-                <div class="verify-ref-match">
-                  <strong>匹配:</strong> ${escapeHtml(r.match_title)}
-                  <span class="verify-ref-meta">${r.match_authors.slice(0, 3).join(', ')} (${r.match_year || 'n.d.'}) · 被引 ${r.match_citations} 次</span>
-                  ${r.match_doi ? `<a href="https://doi.org/${r.match_doi}" target="_blank" rel="noopener">DOI</a>` : ''}
-                </div>
-              ` : `
-                <div class="verify-ref-match"><strong>建议:</strong> 此引用可能为 AI 生成，请手动检索真实文献替换</div>
-              `}
-            </div>
-          `).join('')}
-        `;
-      }
-      resultContent.appendChild(div);
-      div.scrollIntoView({ behavior: 'smooth' });
-    } catch (e) {
-      showToast('引用验证失败');
-    } finally {
-      btn.textContent = '验证引用';
-      btn.disabled = false;
-    }
-  });
-  actions.appendChild(btn);
-}
-
-// ============================================================
-// Math Verification — second-pass consistency check
-// ============================================================
-function injectVerifyMathButton() {
-  const actions = document.querySelector('.result-actions');
-  if (!actions || actions.querySelector('.verify-math-btn')) return;
-
-  const btn = document.createElement('button');
-  btn.className = 'btn-sm verify-math-btn';
-  btn.textContent = '验证推导';
-  btn.title = '独立复核数学推导的正确性';
-  btn.addEventListener('click', async () => {
-    const resultContent = document.getElementById('result-content');
-    const text = resultContent.innerText;
-    if (!text.trim()) { showToast('没有可验证的内容'); return; }
-
-    btn.textContent = '验证中...';
-    btn.disabled = true;
-
-    try {
-      const res = await fetch('/api/verify-math', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: text }),
-      });
-      const data = await res.json();
-
-      let existing = resultContent.querySelector('.math-verify-report');
-      if (existing) existing.remove();
-
-      const div = document.createElement('div');
-      div.className = 'verify-report math-verify-report';
-      if (data.error) {
-        div.innerHTML = `<p class="error-msg">${escapeHtml(data.error)}</p>`;
-      } else {
-        div.innerHTML = `
-          <h3>数学推导验证报告</h3>
-          <div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">以下为独立复核结果，请逐项核实</div>
-          ${marked.parse(data.content)}
-        `;
-      }
-      resultContent.appendChild(div);
-      div.scrollIntoView({ behavior: 'smooth' });
-    } catch (e) {
-      showToast('数学验证失败');
-    } finally {
-      btn.textContent = '验证推导';
-      btn.disabled = false;
-    }
-  });
-  actions.appendChild(btn);
-}
 
 // ============================================================
 // Data Source Highlighter — highlight SIMULATED DATA comments
@@ -1867,129 +1885,165 @@ function sendToPaper(index) {
 }
 
 // ============================================================
-// Plagiarism / Originality Check Button
+// Quick Actions Bar — prominent edit + verify buttons
 // ============================================================
-function injectPlagiarismButton() {
-  const actions = document.querySelector('.result-actions');
-  if (!actions || actions.querySelector('.plagiarism-btn')) return;
+function injectQuickActions() {
+  const resultCard = document.querySelector('.result-card.visible, .paper-result-card.visible');
+  if (!resultCard || resultCard.querySelector('.quick-actions-bar')) return;
 
-  const btn = document.createElement('button');
-  btn.className = 'btn-sm plagiarism-btn';
-  btn.textContent = 'AI 查重';
-  btn.title = '分析论文原创性，检测模板化内容';
-  btn.addEventListener('click', async () => {
-    const resultContent = document.getElementById('result-content');
-    const text = resultContent.innerText;
-    if (!text.trim()) { showToast('没有可查重的内容'); return; }
+  const bar = document.createElement('div');
+  bar.className = 'quick-actions-bar';
+  bar.innerHTML = `
+    <span class="quick-actions-label">快捷操作</span>
+    <button class="quick-action-btn edit-action" id="qa-edit-btn" title="切换编辑 / 预览模式，可直接修改论文内容">✏️ 编辑论文</button>
+    <button class="quick-action-btn plagiarism-action" id="qa-plagiarism-btn" title="AI 分析论文原创性，检测模板化内容和潜在雷同">🔍 AI 查重</button>
+    <button class="quick-action-btn verify-refs-action" id="qa-verify-refs-btn" title="交叉验证参考文献是否真实存在">📚 验证引用</button>
+    <button class="quick-action-btn verify-math-action" id="qa-verify-math-btn" title="独立复核数学推导的正确性">📐 验证推导</button>
+  `;
 
-    btn.textContent = '查重中...';
-    btn.disabled = true;
+  // Insert after the result toolbar
+  const toolbar = resultCard.querySelector('.result-toolbar');
+  if (toolbar) {
+    toolbar.insertAdjacentElement('afterend', bar);
+  } else {
+    resultCard.insertBefore(bar, resultCard.firstChild);
+  }
 
-    try {
-      const res = await fetch('/api/check-plagiarism', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: text }),
-      });
-      const data = await res.json();
-
-      let existing = resultContent.querySelector('.plagiarism-report');
-      if (existing) existing.remove();
-
-      const div = document.createElement('div');
-      div.className = 'verify-report plagiarism-report';
-      if (data.error) {
-        div.innerHTML = `<p class="error-msg">${escapeHtml(data.error)}</p>`;
-      } else {
-        div.innerHTML = `
-          <h3>原创性分析报告</h3>
-          <div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">AI 辅助查重 — 检测模板化内容和潜在雷同风险，结果仅供参考</div>
-          ${marked.parse(data.content)}
-        `;
-      }
-      resultContent.appendChild(div);
-      div.scrollIntoView({ behavior: 'smooth' });
-    } catch (e) {
-      showToast('查重分析失败');
-    } finally {
-      btn.textContent = 'AI 查重';
-      btn.disabled = false;
-    }
-  });
-  actions.appendChild(btn);
+  // Wire up buttons
+  bar.querySelector('#qa-edit-btn').addEventListener('click', toggleEditMode);
+  bar.querySelector('#qa-plagiarism-btn').addEventListener('click', runPlagiarismCheck);
+  bar.querySelector('#qa-verify-refs-btn').addEventListener('click', runReferenceCheck);
+  bar.querySelector('#qa-verify-math-btn').addEventListener('click', runMathCheck);
 }
 
-// Inject plagiarism button alongside other result buttons
-const _origInjectVerifyRefs = injectVerifyRefsButton;
-injectVerifyRefsButton = function() {
-  _origInjectVerifyRefs();
-  injectPlagiarismButton();
-};
-
-// ============================================================
-// Edit Mode Toggle — for generated paper content
-// ============================================================
 let editModeActive = false;
 let editModeContent = '';
 
-function injectEditToggle() {
-  const actions = document.querySelector('.result-actions');
-  if (!actions || actions.querySelector('.edit-toggle-btn')) return;
+function toggleEditMode() {
+  const container = document.getElementById('result-content') || document.getElementById('paper-content');
+  if (!container) return;
+  const btn = document.getElementById('qa-edit-btn');
 
-  const btn = document.createElement('button');
-  btn.className = 'btn-sm edit-toggle-btn';
-  btn.textContent = '编辑';
-  btn.title = '切换编辑/预览模式';
-  btn.addEventListener('click', () => {
-    const container = document.getElementById('result-content') || document.getElementById('paper-content');
-    if (!container) return;
-
-    if (!editModeActive) {
-      // Enter edit mode
-      editModeActive = true;
-      editModeContent = container.innerText;
-      btn.textContent = '预览';
-      btn.style.background = 'var(--amber)';
-      btn.style.color = '#fff';
-      btn.style.borderColor = 'var(--amber)';
-
-      // Replace rendered content with editable textarea
-      const textarea = document.createElement('textarea');
-      textarea.id = 'edit-textarea';
-      textarea.className = 'edit-textarea';
-      textarea.value = editModeContent;
-      container.innerHTML = '';
-      container.appendChild(textarea);
-      textarea.focus();
-    } else {
-      // Exit edit mode — re-render
-      editModeActive = false;
-      const textarea = document.getElementById('edit-textarea');
-      const newContent = textarea ? textarea.value : editModeContent;
-      btn.textContent = '编辑';
-      btn.style.background = '';
-      btn.style.color = '';
-      btn.style.borderColor = '';
-
-      container.innerHTML = marked.parse(newContent);
-      injectCodeCopyButtons(container);
-      injectDisclaimer(container);
-      injectVerificationChecklist(container);
-      injectExplainButtons(container);
-      buildTOC(container);
-      injectDataSourceHighlights(container);
-      showToast('内容已更新');
-    }
-  });
-  actions.appendChild(btn);
+  if (!editModeActive) {
+    editModeActive = true;
+    editModeContent = container.innerText;
+    if (btn) { btn.innerHTML = '👁️ 预览'; btn.classList.add('active'); }
+    const textarea = document.createElement('textarea');
+    textarea.id = 'edit-textarea';
+    textarea.className = 'edit-textarea';
+    textarea.value = editModeContent;
+    container.innerHTML = '';
+    container.appendChild(textarea);
+    textarea.focus();
+  } else {
+    editModeActive = false;
+    const textarea = document.getElementById('edit-textarea');
+    const newContent = textarea ? textarea.value : editModeContent;
+    if (btn) { btn.innerHTML = '✏️ 编辑论文'; btn.classList.remove('active'); }
+    container.innerHTML = marked.parse(newContent);
+    injectCodeCopyButtons(container);
+    injectDisclaimer(container);
+    injectVerificationChecklist(container);
+    injectExplainButtons(container);
+    buildTOC(container);
+    injectDataSourceHighlights(container);
+    showToast('内容已更新');
+  }
 }
 
-// Inject edit toggle alongside result actions
-const _origInjectPlagiarism = injectPlagiarismButton;
-injectPlagiarismButton = function() {
-  _origInjectPlagiarism();
-  injectEditToggle();
-};
+function getActiveContent() {
+  return document.getElementById('result-content') || document.getElementById('paper-content');
+}
+
+async function runPlagiarismCheck() {
+  const btn = document.getElementById('qa-plagiarism-btn');
+  const resultContent = getActiveContent();
+  const text = resultContent ? resultContent.innerText : '';
+  if (!text.trim()) { showToast('没有可查重的内容'); return; }
+
+  btn.innerHTML = '⏳ 查重中...'; btn.disabled = true;
+  try {
+    const res = await fetch('/api/check-plagiarism', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: text }),
+    });
+    const data = await res.json();
+    let existing = resultContent.querySelector('.plagiarism-report');
+    if (existing) existing.remove();
+    const div = document.createElement('div');
+    div.className = 'verify-report plagiarism-report';
+    div.innerHTML = data.error
+      ? `<p class="error-msg">${escapeHtml(data.error)}</p>`
+      : `<h3>原创性分析报告</h3><div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">AI 辅助查重，结果仅供参考</div>${marked.parse(data.content)}`;
+    resultContent.appendChild(div);
+    div.scrollIntoView({ behavior: 'smooth' });
+  } catch (e) { showToast('查重分析失败'); }
+  finally { btn.innerHTML = '🔍 AI 查重'; btn.disabled = false; }
+}
+
+async function runReferenceCheck() {
+  const btn = document.getElementById('qa-verify-refs-btn');
+  const resultContent = getActiveContent();
+  const text = resultContent ? resultContent.innerText : '';
+  if (!text.trim()) { showToast('没有可验证的内容'); return; }
+
+  btn.innerHTML = '⏳ 验证中...'; btn.disabled = true;
+  try {
+    const res = await fetch('/api/verify-references', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: text }),
+    });
+    const data = await res.json();
+    let existing = resultContent.querySelector('.verify-report');
+    if (existing) existing.remove();
+    const div = document.createElement('div');
+    div.className = 'verify-report';
+    if (data.error) {
+      div.innerHTML = `<p class="error-msg">${escapeHtml(data.error)}</p>`;
+    } else {
+      div.innerHTML = `<h3>引用验证报告</h3>
+        <div class="verify-summary">
+          <span class="verify-stat verified">✓ ${data.verified} 条已验证</span>
+          <span class="verify-stat fake">✗ ${data.fake} 条未找到</span>
+        </div>
+        ${data.results.map(r => `
+          <div class="verify-ref-item ${r.status}">
+            <div class="verify-ref-status">${r.status === 'verified' ? '✓ 已验证' : '✗ 未找到匹配'}</div>
+            <div class="verify-ref-original"><strong>原文:</strong> ${escapeHtml(r.original).slice(0, 150)}</div>
+            ${r.status === 'verified' ? `<div class="verify-ref-match"><strong>匹配:</strong> ${escapeHtml(r.match_title)}</div>` : '<div class="verify-ref-match"><strong>建议:</strong> 此引用可能为 AI 生成，请手动检索真实文献替换</div>'}
+          </div>`).join('')}`;
+    }
+    resultContent.appendChild(div);
+    div.scrollIntoView({ behavior: 'smooth' });
+  } catch (e) { showToast('引用验证失败'); }
+  finally { btn.innerHTML = '📚 验证引用'; btn.disabled = false; }
+}
+
+async function runMathCheck() {
+  const btn = document.getElementById('qa-verify-math-btn');
+  const resultContent = getActiveContent();
+  const text = resultContent ? resultContent.innerText : '';
+  if (!text.trim()) { showToast('没有可验证的内容'); return; }
+
+  btn.innerHTML = '⏳ 验证中...'; btn.disabled = true;
+  try {
+    const res = await fetch('/api/verify-math', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: text }),
+    });
+    const data = await res.json();
+    let existing = resultContent.querySelector('.math-verify-report');
+    if (existing) existing.remove();
+    const div = document.createElement('div');
+    div.className = 'verify-report math-verify-report';
+    div.innerHTML = data.error
+      ? `<p class="error-msg">${escapeHtml(data.error)}</p>`
+      : `<h3>数学推导验证报告</h3><div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">独立复核结果，请逐项核实</div>${marked.parse(data.content)}`;
+    resultContent.appendChild(div);
+    div.scrollIntoView({ behavior: 'smooth' });
+  } catch (e) { showToast('数学验证失败'); }
+  finally { btn.innerHTML = '📐 验证推导'; btn.disabled = false; }
+}
 
 // Actually the tab keys are defined inline in the event listener.
 // We need to update it. Let's find and update via a different approach:
