@@ -15,6 +15,7 @@
     <a href="#" class="logo">MMA</a>
     <div class="nav-links">
       <button class="nav-btn active" data-tab="generator">Generator</button>
+      <button class="nav-btn" data-tab="paper">Paper</button>
       <button class="nav-btn" data-tab="models">Models</button>
       <button class="nav-btn" data-tab="problems">Problems</button>
       <button class="nav-btn" data-tab="guide">Guide</button>
@@ -106,7 +107,67 @@
   </div>
 </section>
 
-<!-- ============ TAB 2: Model Library ============ -->
+<!-- ============ TAB 2: Paper ============ -->
+<section id="tab-paper" class="tab">
+  <div class="hero">
+    <h1>论文排版</h1>
+    <p>生成完整学术论文，A4排版预览，直接导出PDF</p>
+  </div>
+
+  <div class="card">
+    <div class="field-row">
+      <div class="field flex-1">
+        <label>竞赛类型</label>
+        <select id="paper-contest-type">
+          <option value="MCM/ICM">美赛 MCM/ICM（英文论文）</option>
+          <option value="CUMCM">国赛 CUMCM（中文论文）</option>
+        </select>
+      </div>
+      <div class="field flex-1">
+        <label>题目类型</label>
+        <select id="paper-problem-type">
+          <option value="A">A 题 — 连续型</option>
+          <option value="B">B 题 — 离散型</option>
+          <option value="C">C 题 — 数据洞察</option>
+          <option value="D">D 题 — 网络科学</option>
+          <option value="E">E 题 — 可持续性</option>
+          <option value="F">F 题 — 政策研究</option>
+        </select>
+      </div>
+    </div>
+    <div class="field">
+      <label for="paper-problem">竞赛题目</label>
+      <textarea id="paper-problem" rows="4" placeholder="粘贴完整题目描述...（如已在 Generator 填写，会自动同步）"></textarea>
+    </div>
+    <div class="field">
+      <label for="paper-requirements">具体要求 <span class="hint">（可选）</span></label>
+      <textarea id="paper-requirements" rows="2" placeholder="如：必须使用优化模型、需做敏感性分析..."></textarea>
+    </div>
+    <div class="btn-row">
+      <button id="paper-generate-btn" class="btn-primary">
+        <span class="btn-text">生成完整论文</span>
+        <span class="btn-loading" hidden><span class="spinner"></span>生成中（约 30-60 秒）...</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Paper preview -->
+  <div id="paper-result" class="card paper-result-card" hidden>
+    <div class="result-toolbar">
+      <span class="result-label" id="paper-result-label">论文预览</span>
+      <div class="result-actions">
+        <button id="paper-copy-btn" class="btn-sm">复制全文</button>
+        <button id="paper-pdf-btn" class="btn-sm">下载 PDF</button>
+        <button id="paper-docx-btn" class="btn-sm">下载 .docx</button>
+      </div>
+    </div>
+    <div class="paper-preview-wrapper">
+      <div id="paper-content" class="paper-page markdown-body"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ TAB 3: Model Library ============ -->
 <section id="tab-models" class="tab">
   <div class="hero">
     <h1>模型参考库</h1>

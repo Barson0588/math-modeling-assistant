@@ -241,6 +241,198 @@ The report should be honest, transparent, and follow COMAP's AI Use Report guide
 """
 
 # ============================================================
+# Full Paper Generation Prompts
+# ============================================================
+
+SYSTEM_PAPER = """You are an award-winning mathematical modeling paper writer. You write complete,
+publication-ready academic papers for MCM/ICM and CUMCM competitions.
+
+Your task: Generate a COMPLETE academic paper based on the given problem. Every section must be
+fully written with complete prose — NOT outlines, NOT guidance notes, NOT placeholders.
+
+Critical requirements:
+- Every section must contain complete, well-written paragraphs
+- Mathematical formulas must use LaTeX notation ($$ for display, $ for inline)
+- All tables and figures must be described in detail with quantitative analysis
+- Sensitivity analysis must include specific parameter ranges and results
+- References must be real, properly formatted citations
+- The abstract must be complete with quantified results (use reasonable estimates)
+- Model assumptions must each have full justification paragraphs
+- Strengths and weaknesses must be honestly assessed with specific reasoning
+- Use past tense for modeling process, present tense for conclusions
+- Third-person passive voice preferred for English papers
+
+Language: {language_instruction}
+Contest: {contest_type}"""
+
+PAPER_FULL_PROMPT = """Write a COMPLETE mathematical modeling competition paper for the following problem.
+This must be a fully written academic paper ready for submission — every section must contain complete prose.
+
+## Contest
+{contest_type} — {problem_type} ({problem_category})
+
+## Problem
+{problem}
+
+## Specific Requirements
+{requirements}
+
+{language_block}
+
+## Output Format
+
+Write the complete paper in Markdown with the following structure.
+CRITICAL: Write every section in full detail with complete paragraphs. Do NOT write guidance notes or outlines.
+
+---
+
+# {paper_title_or_placeholder}
+
+**Team #** [Team Number]
+**Date:** {date}
+
+---
+
+## Abstract
+
+Write a complete, standalone abstract (200-250 words). Include:
+- One-sentence problem summary
+- Methods used
+- Key quantified results (use reasonable estimates based on your model)
+- Main conclusion
+- NO formulas, NO citations
+
+---
+
+## 1. Introduction
+
+### 1.1 Problem Background
+[Full background paragraphs — 2-3 paragraphs explaining the real-world context and importance]
+
+### 1.2 Problem Restatement
+[Restate the problem in your own words, identify key sub-problems, explain what needs to be solved]
+
+### 1.3 Our Approach
+[Overview of modeling approach, why it's appropriate, what makes it innovative]
+
+---
+
+## 2. Assumptions and Justifications
+
+[5-7 assumptions, EACH with:
+- Clear statement of the assumption
+- Full justification paragraph explaining WHY this assumption is reasonable
+- Discussion of limitations introduced by this assumption]
+
+---
+
+## 3. Notation
+
+[Table of all symbols used in the paper, in alphabetical order]
+
+| Symbol | Definition | Unit |
+|--------|-----------|------|
+| ... | ... | ... |
+
+---
+
+## 4. Model Development
+
+### 4.1 Conceptual Framework
+[Describe the conceptual logic: input → processing → output. Include a text description of the model flow.]
+
+### 4.2 Mathematical Formulation
+[Complete mathematical derivation with LaTeX formulas. Include:
+- Objective function
+- Constraints
+- Key equations
+- Step-by-step derivation]
+
+### 4.3 Model Analysis
+[Analyze the mathematical properties: existence, uniqueness, convexity, complexity]
+
+---
+
+## 5. Model Solution
+
+### 5.1 Algorithm Design
+[Describe the algorithm used to solve the model. Include pseudocode logic in text form.]
+
+### 5.2 Implementation
+[Describe software tools, libraries, key parameter settings, computational considerations]
+
+### 5.3 Solution Results
+[Present the main numerical results with detailed interpretation]
+
+---
+
+## 6. Results and Analysis
+
+### 6.1 Data Visualization
+[Describe key figures and tables in detail. For each figure/table:
+- What it shows
+- Key patterns and trends observed
+- What these patterns MEAN for the problem]
+
+### 6.2 Comparative Analysis
+[Compare different scenarios, parameter settings, or model variants]
+
+### 6.3 Key Findings
+[Summarize the most important discoveries from the results]
+
+---
+
+## 7. Sensitivity Analysis
+
+### 7.1 Parameter Sensitivity
+[Test key parameters at ±10%, ±15%, ±20%. Present results in a table. Analyze which parameters have the greatest impact.]
+
+### 7.2 Multi-Factor Analysis
+[Analyze interactions between parameters if applicable]
+
+### 7.3 Model Robustness
+[Discuss how robust the model is based on sensitivity results. Is it stable under parameter perturbation?]
+
+---
+
+## 8. Model Evaluation
+
+### 8.1 Strengths
+[4-5 specific strengths with reasoning for each]
+
+### 8.2 Weaknesses
+[4-5 honest limitations with discussion of their impact]
+
+### 8.3 Future Improvements
+[Concrete suggestions for how each weakness could be addressed]
+
+---
+
+## 9. Conclusion
+
+[2-3 paragraphs summarizing:
+- What was accomplished
+- Key findings
+- Broader implications and future work]
+
+---
+
+## References
+
+[List 12-18 references in proper format. Include a mix of:
+- Classic textbooks in the relevant mathematical field
+- Recent journal articles (2020+)
+- Competition resource materials
+Format: APA 7th edition for English, GB/T 7714 for Chinese]
+
+---
+
+## Appendix: Code Listing
+
+[Include the key Python code used for the model. Code should be complete, commented, and reproducible.]
+"""
+
+# ============================================================
 # LaTeX Template
 # ============================================================
 

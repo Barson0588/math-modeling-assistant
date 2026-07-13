@@ -125,6 +125,9 @@ document.querySelectorAll('.nav-btn').forEach(btn => {
     if (!loadedTabs[tabName]) {
       loadedTabs[tabName] = true;
       switch (tabName) {
+        case 'paper':
+          syncGeneratorToPaper();
+          break;
         case 'models':
           if (modelsReady) renderModelGrid(allModels);
           else loadModels();
@@ -138,6 +141,7 @@ document.querySelectorAll('.nav-btn').forEach(btn => {
       }
     } else {
       // Re-entry: always re-render data tabs so filter state stays fresh
+      if (tabName === 'paper') syncGeneratorToPaper();
       if (tabName === 'models' && modelsReady) renderModelGrid(allModels);
       if (tabName === 'problems' && problemsReady) renderProblemListWithBookmarks(allProblems);
     }
@@ -728,6 +732,149 @@ document.getElementById('latex-btn').addEventListener('click', async () => {
   } finally {
     btn.textContent = orig; btn.disabled = false;
   }
+});
+
+// ============================================================
+// Paper Tab — Full Paper Generation & Preview
+// ============================================================
+const paperGenerateBtn = document.getElementById('paper-generate-btn');
+const paperResult = document.getElementById('paper-result');
+const paperContent = document.getElementById('paper-content');
+const paperResultLabel = document.getElementById('paper-result-label');
+
+function syncGeneratorToPaper() {
+  // Copy problem from generator if paper fields are empty
+  const genProblem = document.getElementById('problem').value.trim();
+  const genReq = document.getElementById('requirements').value.trim();
+  const genContest = document.getElementById('contest-type').value;
+  const genType = document.getElementById('problem-type').value;
+
+  const paperProblem = document.getElementById('paper-problem');
+  const paperReq = document.getElementById('paper-requirements');
+  const paperContest = document.getElementById('paper-contest-type');
+  const paperType = document.getElementById('paper-problem-type');
+
+  if (!paperProblem.value.trim() && genProblem) {
+    paperProblem.value = genProblem;
+    paperContest.value = genContest;
+    paperType.value = genType;
+  }
+  if (!paperReq.value.trim() && genReq) {
+    paperReq.value = genReq;
+  }
+}
+
+// Also sync when generator inputs change
+['problem', 'requirements', 'contest-type', 'problem-type'].forEach(id => {
+  const el = document.getElementById(id);
+  if (el) el.addEventListener('change', () => {
+    // Don't auto-sync if paper already has content
+  });
+});
+
+paperGenerateBtn.addEventListener('click', async () => {
+  const problem = document.getElementById('paper-problem').value.trim();
+  const requirements = document.getElementById('paper-requirements').value.trim();
+  const contestType = document.getElementById('paper-contest-type').value;
+  const problemType = document.getElementById('paper-problem-type').value;
+
+  if (!problem) { showToast('请先输入竞赛题目'); return; }
+
+  setButtonsLoading(paperGenerateBtn, true);
+  paperResult.classList.add('visible');
+  paperContent.innerHTML = '<p class="streaming-hint"><span class="spinner spinner-dark"></span>正在生成完整论文（约 30-60 秒）...</p>';
+  paperResultLabel.textContent = '论文预览';
+  paperResult.scrollIntoView({ behavior: 'smooth' });
+
+  let fullContent = '';
+  let errorOccurred = false;
+
+  try {
+    const res = await fetch('/api/generate-paper/stream', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ problem, requirements, contest_type: contestType, problem_type: problemType, problem_category: mapProblemCategory(problemType) }),
+    });
+
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.error || `HTTP ${res.status}`);
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let chunkCount = 0;
+    let msgLines = [];
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        if (line === '' || line === '\r') {
+          if (msgLines.length > 0) {
+            const data = msgLines.join('\n');
+            msgLines = [];
+            if (data === '[DONE]') continue;
+            if (data.startsWith('[ERROR]')) { errorOccurred = true; throw new Error(data.slice(8)); }
+            fullContent += data;
+            chunkCount++;
+            if (chunkCount % 10 === 0 || fullContent.length < 300) {
+              paperContent.innerHTML = marked.parse(fullContent) + '<span class="streaming-cursor"></span>';
+              injectCodeCopyButtons(paperContent);
+            }
+          }
+        } else if (line.startsWith('data: ')) {
+          msgLines.push(line.slice(6));
+        }
+      }
+    }
+
+    paperContent.innerHTML = marked.parse(fullContent);
+    injectCodeCopyButtons(paperContent);
+    if (!errorOccurred && fullContent) {
+      showToast('论文生成完成');
+    }
+  } catch (e) {
+    if (!errorOccurred) {
+      paperContent.innerHTML = `<p class="error-msg">生成失败: ${escapeHtml(e.message)} <button class="btn-sm" onclick="paperGenerateBtn.click()">重试</button></p>`;
+    }
+  } finally {
+    setButtonsLoading(paperGenerateBtn, false);
+  }
+});
+
+// Paper copy button
+document.getElementById('paper-copy-btn').addEventListener('click', () => {
+  const text = paperContent.innerText;
+  navigator.clipboard.writeText(text).then(() => {
+    const btn = document.getElementById('paper-copy-btn');
+    btn.textContent = '已复制';
+    setTimeout(() => btn.textContent = '复制全文', 1500);
+  }).catch(() => showToast('复制失败'));
+});
+
+// Paper PDF download (print to PDF)
+document.getElementById('paper-pdf-btn').addEventListener('click', () => {
+  window.print();
+});
+
+// Paper DOCX download (as .md file for easy import)
+document.getElementById('paper-docx-btn').addEventListener('click', () => {
+  const text = paperContent.innerText;
+  if (!text.trim()) { showToast('没有可下载的内容'); return; }
+  const blob = new Blob([text], { type: 'text/markdown;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'competition-paper.md';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  showToast('已下载 Markdown 文件（可用 Pandoc 转 .docx）');
 });
 
 // ============================================================

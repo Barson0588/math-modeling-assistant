@@ -2,7 +2,9 @@ from flask import Flask, render_template, request, jsonify, Response, stream_wit
 from src.prompts import (
     ROLES_INFO, SYSTEM_MCM_EN, SYSTEM_MCM_CN, SYSTEM_AI_REPORT,
     PAPER_PROMPT, AI_REPORT_PROMPT, LATEX_TEMPLATE,
+    SYSTEM_PAPER, PAPER_FULL_PROMPT,
 )
+from datetime import date
 from src.llm_client import generate_response, generate_stream
 from src.models_data import MODELS
 from src.problems_data import PROBLEMS
@@ -189,6 +191,63 @@ def generate_stream_endpoint():
             for chunk in generate_stream(system_prompt, user_prompt):
                 # Proper SSE framing: each line of the chunk gets its own "data:" prefix.
                 # Empty line (\n\n) marks end of one SSE message.
+                for line in chunk.split('\n'):
+                    yield f"data: {line}\n"
+                yield '\n'
+            yield "data: [DONE]\n\n"
+        except Exception as e:
+            yield f"data: [ERROR] {e}\n\n"
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+# ===== API: Full Paper Generation =====
+
+@app.route("/api/generate-paper/stream", methods=["POST"])
+def generate_paper_stream_endpoint():
+    data = request.get_json()
+    problem = data.get("problem", "").strip()
+    requirements = data.get("requirements", "").strip()
+    contest_type = data.get("contest_type", "MCM/ICM")
+    problem_type = data.get("problem_type", "A")
+    problem_category = data.get("problem_category", "连续型")
+
+    if not problem:
+        return jsonify({"error": "请输入题目描述"}), 400
+
+    if contest_type == "CUMCM":
+        language_instruction = "使用中文撰写完整论文，按国赛格式。"
+        language_block = ""
+    else:
+        language_instruction = "Write the complete paper in ENGLISH. Follow MCM/ICM standards strictly."
+        language_block = "**IMPORTANT: Generate the complete paper in ENGLISH.**"
+
+    system_prompt = SYSTEM_PAPER.format(
+        contest_type=contest_type,
+        language_instruction=language_instruction,
+    )
+
+    user_prompt = PAPER_FULL_PROMPT.format(
+        contest_type=contest_type,
+        problem_type=problem_type,
+        problem_category=problem_category,
+        problem=problem,
+        requirements=requirements or "无特殊要求",
+        language_block=language_block,
+        paper_title_or_placeholder="MCM/ICM Competition Paper" if contest_type != "CUMCM" else "数学建模竞赛论文",
+        date=date.today().strftime("%B %d, %Y") if contest_type != "CUMCM" else date.today().strftime("%Y年%m月%d日"),
+    )
+
+    def generate():
+        try:
+            for chunk in generate_stream(system_prompt, user_prompt, max_tokens=12000):
                 for line in chunk.split('\n'):
                     yield f"data: {line}\n"
                 yield '\n'
