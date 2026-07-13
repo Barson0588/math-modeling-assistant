@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Math Modeling Assistant</title>
 <link rel="stylesheet" href="/static/style.css">
+<link rel="manifest" href="/static/manifest.json">
+<meta name="theme-color" content="#2563eb">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400;14..32,500;14..32,600;14..32,700&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
@@ -159,6 +161,7 @@
         <button id="paper-copy-btn" class="btn-sm">复制全文</button>
         <button id="paper-pdf-btn" class="btn-sm">下载 PDF</button>
         <button id="paper-docx-btn" class="btn-sm">下载 .docx</button>
+        <button id="paper-tex-btn" class="btn-sm">下载 .tex</button>
       </div>
     </div>
     <div class="paper-preview-wrapper">
@@ -263,6 +266,11 @@
     <h2 class="section-title">代码规范</h2>
     <div id="code-standards-container"></div>
   </div>
+
+  <div class="card">
+    <h2 class="section-title">提交前最后检查</h2>
+    <div id="submission-checklist" class="submission-checklist"></div>
+  </div>
 </section>
 
 <!-- ============ TAB 5: Team Roles ============ -->
@@ -284,5 +292,10 @@
 
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <script src="/static/script.js"></script>
+<script>
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/static/sw.js').catch(() => {});
+}
+</script>
 </body>
 </html>

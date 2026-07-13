@@ -1,0 +1,10 @@
+{
+  "name": "Math Modeling Assistant",
+  "short_name": "MMA",
+  "description": "MCM/ICM & CUMCM paper generator, model library, and competition guide",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f8f9fb",
+  "theme_color": "#2563eb",
+  "icons": []
+}

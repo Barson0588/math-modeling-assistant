@@ -359,7 +359,7 @@ document.addEventListener('keydown', e => {
   if (isInput) return;
 
   // Ctrl/Cmd+1-5: switch tabs
-  const tabKeys = { '1': 'generator', '2': 'models', '3': 'problems', '4': 'guide', '5': 'roles' };
+  const tabKeys = { '1': 'generator', '2': 'paper', '3': 'models', '4': 'problems', '5': 'guide', '6': 'roles' };
   if ((e.metaKey || e.ctrlKey) && tabKeys[e.key]) {
     e.preventDefault();
     const btn = document.querySelector(`[data-tab="${tabKeys[e.key]}"]`);
@@ -396,7 +396,7 @@ function showShortcuts() {
       <h2>键盘快捷键</h2>
       <div class="shortcuts-grid">
         <div class="shortcut-row"><kbd>Ctrl + Enter</kbd><span>生成论文方案</span></div>
-        <div class="shortcut-row"><kbd>Ctrl + 1-5</kbd><span>切换标签页</span></div>
+        <div class="shortcut-row"><kbd>Ctrl + 1-6</kbd><span>切换标签页</span></div>
         <div class="shortcut-row"><kbd>Ctrl + K</kbd><span>聚焦搜索框</span></div>
         <div class="shortcut-row"><kbd>Esc</kbd><span>关闭弹窗</span></div>
         <div class="shortcut-row"><kbd>?</kbd><span>显示此帮助</span></div>
@@ -467,6 +467,7 @@ async function loadGuide() {
     renderTimeline(data.timeline);
     renderTools(data.tools);
     renderCodeStandards(data.code_standards);
+    if (data.submission_checklist) renderSubmissionChecklist(data.submission_checklist);
   } catch (e) {
     document.getElementById('timeline-container').innerHTML = '<p class="error-msg">加载失败 <button class="btn-sm" onclick="loadedTabs.guide=false;loadGuide()">重试</button></p>';
   }
@@ -555,9 +556,10 @@ generateBtn.addEventListener('click', async () => {
   setButtonsLoading(generateBtn, true);
   aiReportBtn.disabled = true;
   resultDiv.classList.add('visible');
-  resultContent.innerHTML = '<p class="streaming-hint"><span class="spinner spinner-dark"></span>正在生成论文方案...</p>';
+  resultContent.innerHTML = '<div class="stage-indicator"><span class="stage-dot"></span>准备中...</div>';
   resultLabel.textContent = '生成结果';
   resultDiv.scrollIntoView({ behavior: 'smooth' });
+  const stageEl = resultContent.querySelector('.stage-indicator');
 
   let fullContent = '';
   let errorOccurred = false;
@@ -598,6 +600,7 @@ generateBtn.addEventListener('click', async () => {
             if (data.startsWith('[ERROR]')) { errorOccurred = true; throw new Error(data.slice(8)); }
             fullContent += data;
             chunkCount++;
+            if (stageEl) stageEl.innerHTML = '<span class="stage-dot"></span>' + detectStage(fullContent);
             if (chunkCount % 10 === 0 || fullContent.length < 200) {
               resultContent.innerHTML = marked.parse(fullContent) + '<span class="streaming-cursor"></span>';
               injectCodeCopyButtons(resultContent);
@@ -614,6 +617,10 @@ generateBtn.addEventListener('click', async () => {
     resultContent.innerHTML = marked.parse(fullContent);
     injectCodeCopyButtons(resultContent);
     buildTOC(resultContent);
+    injectDisclaimer(resultContent);
+    injectVerificationChecklist(resultContent);
+    injectExplainButtons(resultContent);
+    injectScholarButton();
     if (!errorOccurred && fullContent) {
       saveHistory(problem, contestType, problemType, fullContent);
       saveDraft(problem, contestType, problemType, fullContent);
@@ -782,9 +789,10 @@ paperGenerateBtn.addEventListener('click', async () => {
 
   setButtonsLoading(paperGenerateBtn, true);
   paperResult.classList.add('visible');
-  paperContent.innerHTML = '<p class="streaming-hint"><span class="spinner spinner-dark"></span>正在生成完整论文（约 30-60 秒）...</p>';
+  paperContent.innerHTML = '<div class="stage-indicator"><span class="stage-dot"></span>准备中...</div>';
   paperResultLabel.textContent = '论文预览';
   paperResult.scrollIntoView({ behavior: 'smooth' });
+  const stageEl = paperContent.querySelector('.stage-indicator');
 
   let fullContent = '';
   let errorOccurred = false;
@@ -824,6 +832,7 @@ paperGenerateBtn.addEventListener('click', async () => {
             if (data.startsWith('[ERROR]')) { errorOccurred = true; throw new Error(data.slice(8)); }
             fullContent += data;
             chunkCount++;
+            if (stageEl) stageEl.innerHTML = '<span class="stage-dot"></span>' + detectStage(fullContent);
             if (chunkCount % 10 === 0 || fullContent.length < 300) {
               paperContent.innerHTML = marked.parse(fullContent) + '<span class="streaming-cursor"></span>';
               injectCodeCopyButtons(paperContent);
@@ -837,6 +846,9 @@ paperGenerateBtn.addEventListener('click', async () => {
 
     paperContent.innerHTML = marked.parse(fullContent);
     injectCodeCopyButtons(paperContent);
+    injectDisclaimer(paperContent);
+    injectVerificationChecklist(paperContent);
+    injectExplainButtons(paperContent);
     if (!errorOccurred && fullContent) {
       showToast('论文生成完成');
     }
@@ -864,6 +876,72 @@ document.getElementById('paper-pdf-btn').addEventListener('click', () => {
   window.print();
 });
 
+// Paper LaTeX download — fetch from LaTeX generation endpoint
+document.getElementById('paper-tex-btn').addEventListener('click', async () => {
+  const problem = document.getElementById('paper-problem').value.trim();
+  const requirements = document.getElementById('paper-requirements').value.trim();
+  const contestType = document.getElementById('paper-contest-type').value;
+  const problemType = document.getElementById('paper-problem-type').value;
+
+  if (!problem) { showToast('请先输入竞赛题目'); return; }
+
+  const btn = document.getElementById('paper-tex-btn');
+  const orig = btn.textContent;
+  btn.textContent = '生成中...'; btn.disabled = true;
+
+  try {
+    const res = await fetch('/api/generate-paper/latex', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ problem, requirements, contest_type: contestType, problem_type: problemType, problem_category: mapProblemCategory(problemType) }),
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || '生成失败');
+    }
+
+    // Collect SSE stream
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let latexContent = '';
+    let msgLines = [];
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+      for (const line of lines) {
+        if (line === '' || line === '\r') {
+          if (msgLines.length > 0) {
+            const data = msgLines.join('\n');
+            msgLines = [];
+            if (data === '[DONE]') continue;
+            if (data.startsWith('[ERROR]')) throw new Error(data.slice(8));
+            latexContent += data;
+          }
+        } else if (line.startsWith('data: ')) {
+          msgLines.push(line.slice(6));
+        }
+      }
+    }
+
+    if (latexContent.trim()) {
+      downloadFile(latexContent, 'competition-paper.tex', 'application/x-tex;charset=utf-8');
+      showToast('已下载 LaTeX 源文件');
+    } else {
+      showToast('LaTeX 生成失败');
+    }
+  } catch (e) {
+    showToast('LaTeX 生成失败: ' + e.message);
+  } finally {
+    btn.textContent = orig; btn.disabled = false;
+  }
+});
+
 // Paper DOCX download (as .md file for easy import)
 document.getElementById('paper-docx-btn').addEventListener('click', () => {
   const text = paperContent.innerText;
@@ -881,10 +959,22 @@ document.getElementById('paper-docx-btn').addEventListener('click', () => {
 // History (localStorage)
 // ============================================================
 const HISTORY_KEY = 'mma-history';
-const MAX_HISTORY = 5;
+const MAX_HISTORY = 20;
 
 function getHistory() {
-  try { return JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]'); }
+  try {
+    const raw = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
+    // Migrate old records (string time → ISO format, add missing fields)
+    return raw.map(h => ({
+      problem: h.problem || '',
+      contestType: h.contestType || 'MCM/ICM',
+      problemType: h.problemType || 'A',
+      content: h.content || '',
+      time: h.time || new Date().toISOString(),
+      tags: h.tags || [],
+      starred: h.starred || false,
+    }));
+  }
   catch { return []; }
 }
 
@@ -895,32 +985,98 @@ function saveHistory(problem, contestType, problemType, content) {
     contestType,
     problemType,
     content,
-    time: new Date().toLocaleString('zh-CN'),
+    time: new Date().toISOString(),
+    tags: [],
+    starred: false,
   });
-  if (history.length > MAX_HISTORY) history.length = MAX_HISTORY;
-  localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+  // Keep starred + most recent unstarred (up to MAX_HISTORY unstarred)
+  const starred = history.filter(h => h.starred);
+  const unstarred = history.filter(h => !h.starred).slice(0, MAX_HISTORY);
+  const merged = [...starred, ...unstarred].sort((a, b) => new Date(b.time) - new Date(a.time));
+  localStorage.setItem(HISTORY_KEY, JSON.stringify(merged));
   renderHistory();
 }
+
+function timeAgo(isoString) {
+  const diff = Date.now() - new Date(isoString).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return '刚刚';
+  if (mins < 60) return `${mins} 分钟前`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours} 小时前`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days} 天前`;
+  return new Date(isoString).toLocaleDateString('zh-CN');
+}
+
+let historyFilter = '';
 
 function renderHistory() {
   const history = getHistory();
   if (!historyCard || !historyList) return;
   if (history.length === 0) { historyCard.hidden = true; return; }
 
+  let filtered = history;
+  if (historyFilter) {
+    const q = historyFilter.toLowerCase();
+    filtered = history.filter(h =>
+      h.problem.toLowerCase().includes(q) ||
+      h.tags.some(t => t.toLowerCase().includes(q)) ||
+      h.contestType.toLowerCase().includes(q)
+    );
+  }
+
   historyCard.hidden = false;
-  historyList.innerHTML = history.map((h, i) => `
-    <div class="history-item" onclick="restoreHistory(${i})">
+  historyList.innerHTML = `
+    <input type="text" class="history-search" placeholder="搜索历史记录..." value="${escapeHtml(historyFilter)}" oninput="historyFilter=this.value;renderHistory()">
+  ` + (filtered.length === 0 ? '<p class="history-empty">没有匹配的历史记录</p>' :
+    filtered.map((h, i) => `
+    <div class="history-item">
       <div class="history-item-top">
-        <span class="history-item-problem">${escapeHtml(h.problem)}</span>
-        <span class="history-item-time">${h.time}</span>
+        <button class="history-item-star${h.starred ? ' starred' : ''}" onclick="event.stopPropagation();toggleStar(${history.indexOf(h)})" title="${h.starred ? '取消收藏' : '收藏'}">${h.starred ? '★' : '☆'}</button>
+        <span class="history-item-problem" onclick="restoreHistory(${history.indexOf(h)})">${escapeHtml(h.problem)}</span>
+        <span class="history-time-rel">${timeAgo(h.time)}</span>
       </div>
       <div class="history-item-meta">${h.contestType} · ${h.problemType} 题 · ${h.content.length} 字</div>
+      <div class="history-item-tags">
+        ${h.tags.map(t => `<span class="history-tag" onclick="event.stopPropagation();removeTag(${history.indexOf(h)},'${escapeHtml(t)}')">${escapeHtml(t)}<span class="tag-remove">&times;</span></span>`).join('')}
+        <button class="history-tag-add" onclick="event.stopPropagation();addTagPrompt(${history.indexOf(h)})">+ 标签</button>
+      </div>
     </div>
-  `).join('') + `
+  `).join('')) + `
     <div class="history-actions">
-      <button class="btn-sm" onclick="event.stopPropagation();clearHistory()">清除记录</button>
+      <button class="btn-sm" onclick="event.stopPropagation();clearHistory()">清除未收藏记录</button>
     </div>
   `;
+}
+
+function toggleStar(index) {
+  const history = getHistory();
+  if (index < 0 || index >= history.length) return;
+  history[index].starred = !history[index].starred;
+  localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+  renderHistory();
+}
+
+function addTagPrompt(index) {
+  const history = getHistory();
+  if (index < 0 || index >= history.length) return;
+  const tag = prompt('输入标签名（如"优化模型"、"微分方程"）:');
+  if (tag && tag.trim()) {
+    if (!history[index].tags.includes(tag.trim())) {
+      history[index].tags.push(tag.trim());
+    }
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+    renderHistory();
+  }
+}
+
+function removeTag(index, tag) {
+  const history = getHistory();
+  if (index < 0 || index >= history.length) return;
+  history[index].tags = history[index].tags.filter(t => t !== tag);
+  localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+  renderHistory();
 }
 
 function restoreHistory(index) {
@@ -936,10 +1092,13 @@ function restoreHistory(index) {
 }
 
 function clearHistory() {
-  localStorage.removeItem(HISTORY_KEY);
-  historyCard.hidden = true;
-  historyList.innerHTML = '';
-  showToast('历史记录已清除');
+  const history = getHistory();
+  const starred = history.filter(h => h.starred);
+  localStorage.setItem(HISTORY_KEY, JSON.stringify(starred));
+  historyFilter = '';
+  renderHistory();
+  if (starred.length === 0) historyCard.hidden = true;
+  showToast(starred.length > 0 ? `已清除未收藏记录，保留 ${starred.length} 条收藏` : '历史记录已清除');
 }
 
 renderHistory();
@@ -1246,3 +1405,280 @@ document.getElementById('print-btn').addEventListener('click', () => {
 });
 
 // Keyboard shortcuts handled in unified handler above (line ~330)
+
+// ============================================================
+// Stage Detection — parse streaming content for current section
+// ============================================================
+function detectStage(content) {
+  const headings = content.match(/^#{1,3}\s+(.+)$/gm);
+  if (!headings || headings.length === 0) return '正在分析问题...';
+  const last = headings[headings.length - 1].replace(/^#+\s*/, '').trim();
+  if (last.length > 60) return '正在撰写 ' + last.slice(0, 57) + '...';
+  return '正在撰写 ' + last + '...';
+}
+
+// ============================================================
+// Disclaimer Banner — inject into results
+// ============================================================
+function injectDisclaimer(container) {
+  if (container.querySelector('.disclaimer-banner')) return;
+  const banner = document.createElement('div');
+  banner.className = 'disclaimer-banner';
+  banner.innerHTML = '<span class="disclaimer-icon">⚠️</span><span>AI 生成内容仅供学习参考。所有数学推导、数据和引用需人工验证后使用，不可直接作为竞赛提交材料。</span>';
+  container.insertBefore(banner, container.firstChild);
+}
+
+// ============================================================
+// Verification Checklist — inject into results
+// ============================================================
+const VERIFY_KEY = 'mma-verify-checks';
+
+function getVerifyChecks() {
+  try { return JSON.parse(localStorage.getItem(VERIFY_KEY) || '{}'); }
+  catch { return {}; }
+}
+
+function injectVerificationChecklist(container) {
+  if (container.querySelector('.verify-checklist')) return;
+  const items = [
+    { id: 'math', text: '数学推导已验证 — 公式、符号、逻辑正确' },
+    { id: 'refs', text: '参考文献已核实 — 引用真实存在且格式正确' },
+    { id: 'code', text: '代码可运行 — 已测试并输出预期结果' },
+    { id: 'abstract', text: '摘要符合要求 — 字数、格式、无公式引用' },
+  ];
+  const checks = getVerifyChecks();
+  const done = items.filter(i => checks[i.id]).length;
+
+  const wrapper = document.createElement('div');
+  wrapper.className = 'verify-checklist';
+  wrapper.innerHTML = `
+    <div class="verify-title">
+      验证清单
+      <span class="verify-progress">${done}/${items.length}</span>
+    </div>
+    ${items.map(i => `
+      <label class="verify-item${checks[i.id] ? ' checked' : ''}" data-id="${i.id}">
+        <input type="checkbox" ${checks[i.id] ? 'checked' : ''} onchange="toggleVerifyCheck('${i.id}', this)">
+        <span class="verify-check-text">${i.text}</span>
+      </label>
+    `).join('')}
+    <div class="verify-ready${done === items.length ? ' show' : ''}">✓ 所有检查项已完成，论文已就绪</div>
+  `;
+  container.appendChild(wrapper);
+}
+
+function toggleVerifyCheck(id, checkbox) {
+  const checks = getVerifyChecks();
+  checks[id] = checkbox.checked;
+  localStorage.setItem(VERIFY_KEY, JSON.stringify(checks));
+  // Re-render to update progress
+  const container = checkbox.closest('.verify-checklist');
+  if (container) {
+    const allDone = Object.values(checks).filter(Boolean).length >= 4;
+    const progress = container.querySelector('.verify-progress');
+    if (progress) progress.textContent = `${Object.values(checks).filter(Boolean).length}/4`;
+    const ready = container.querySelector('.verify-ready');
+    if (ready) ready.classList.toggle('show', allDone);
+    const item = checkbox.closest('.verify-item');
+    if (item) item.classList.toggle('checked', checkbox.checked);
+  }
+}
+
+// ============================================================
+// Explain Buttons — inject ? buttons on section headings
+// ============================================================
+function injectExplainButtons(container) {
+  const headings = container.querySelectorAll('h2, h3');
+  headings.forEach(h => {
+    if (h.querySelector('.explain-btn')) return;
+    const btn = document.createElement('button');
+    btn.className = 'explain-btn';
+    btn.textContent = '?';
+    btn.title = '用通俗语言解释此章节';
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const section = h;
+      // Collect content until next heading
+      let content = '';
+      let el = section.nextElementSibling;
+      while (el && !['H1', 'H2', 'H3'].includes(el.tagName)) {
+        content += el.textContent + '\n';
+        el = el.nextElementSibling;
+      }
+      showExplainPanel(section.textContent, content.slice(0, 2000));
+    });
+    h.appendChild(btn);
+  });
+}
+
+function showExplainPanel(title, content) {
+  // Remove existing panel
+  const existing = document.querySelector('.explain-panel');
+  if (existing) existing.remove();
+
+  const panel = document.createElement('div');
+  panel.className = 'explain-panel';
+  panel.innerHTML = `
+    <div class="explain-panel-header">
+      <h3>通俗解释</h3>
+      <button class="explain-panel-close" onclick="this.closest('.explain-panel').remove()">&times;</button>
+    </div>
+    <div class="explain-panel-body">
+      <p style="color:var(--text-secondary);font-size:13px">章节: ${escapeHtml(title).slice(0, 80)}</p>
+      <div style="margin-top:12px"><span class="spinner spinner-dark"></span> 生成通俗解释...</div>
+    </div>
+    <div class="explain-panel-actions">
+      <button class="btn-sm" onclick="const t=this.closest('.explain-panel').querySelector('.explain-panel-body').innerText;navigator.clipboard.writeText(t);showToast('已复制')">复制解释</button>
+      <button class="btn-sm" onclick="this.closest('.explain-panel').remove()">关闭</button>
+    </div>
+  `;
+  document.body.appendChild(panel);
+
+  // Fetch explanation
+  fetch('/api/explain', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ section_title: title, section_content: content }),
+  })
+  .then(res => res.json())
+  .then(data => {
+    const body = panel.querySelector('.explain-panel-body');
+    if (data.error) {
+      body.innerHTML = `<p class="error-msg">${escapeHtml(data.error)}</p>`;
+    } else {
+      body.innerHTML = marked.parse(data.content);
+    }
+  })
+  .catch(() => {
+    panel.querySelector('.explain-panel-body').innerHTML = '<p class="error-msg">网络错误，请重试</p>';
+  });
+
+  // Close on Escape
+  const escHandler = e => { if (e.key === 'Escape') { panel.remove(); document.removeEventListener('keydown', escHandler); } };
+  document.addEventListener('keydown', escHandler);
+}
+
+// ============================================================
+// Scholar Search Button — fetch real references
+// ============================================================
+function injectScholarButton() {
+  const actions = document.querySelector('.result-actions');
+  if (!actions || actions.querySelector('.scholar-btn')) return;
+
+  const btn = document.createElement('button');
+  btn.className = 'btn-sm scholar-btn';
+  btn.textContent = '检索真实文献';
+  btn.addEventListener('click', async () => {
+    const resultContent = document.getElementById('result-content');
+    // Extract keywords from the generated content
+    const text = resultContent.innerText;
+    const modelSection = text.match(/模型.*?方案|Model.*?Development/i);
+    const keywords = modelSection ? modelSection[0].slice(0, 100) : text.slice(200, 400);
+
+    btn.textContent = '检索中...';
+    btn.disabled = true;
+
+    try {
+      const res = await fetch('/api/scholar/search?q=' + encodeURIComponent(keywords.slice(0, 200)));
+      const data = await res.json();
+
+      let existing = resultContent.querySelector('.scholar-results');
+      if (existing) existing.remove();
+
+      const div = document.createElement('div');
+      div.className = 'scholar-results';
+      if (data.papers && data.papers.length > 0) {
+        div.innerHTML = '<h3>真实参考文献 (Semantic Scholar)</h3>' +
+          data.papers.map(p => `
+            <div class="scholar-paper">
+              <div class="scholar-title">${escapeHtml(p.title)}</div>
+              <div class="scholar-meta">${p.authors.slice(0, 3).join(', ')}${p.authors.length > 3 ? ', et al.' : ''} (${p.year || 'n.d.'})</div>
+              ${p.citationCount ? `<span class="scholar-citations">被引 ${p.citationCount} 次</span>` : ''}
+              ${p.url ? ` <a href="${p.url}" target="_blank" rel="noopener" style="font-size:11px">查看</a>` : ''}
+            </div>
+          `).join('');
+      } else {
+        div.innerHTML = '<div class="scholar-results"><h3>真实参考文献</h3><p style="color:var(--text-secondary);font-size:13px">未找到相关文献，建议调整关键词或手动检索</p></div>';
+      }
+      resultContent.appendChild(div);
+    } catch (e) {
+      showToast('文献检索失败');
+    } finally {
+      btn.textContent = '检索真实文献';
+      btn.disabled = false;
+    }
+  });
+  actions.appendChild(btn);
+}
+
+// ============================================================
+// Submission Checklist — render in Guide tab
+// ============================================================
+function renderSubmissionChecklist(checklist) {
+  const container = document.getElementById('submission-checklist');
+  if (!container) return;
+
+  const saved = JSON.parse(localStorage.getItem('mma-checklist') || '{}');
+
+  function render() {
+    const done = Object.values(saved).filter(Boolean).length;
+    const total = Object.keys(saved).length || Object.values(checklist.mcm).length + Object.values(checklist.cumcm).length;
+    const pct = total > 0 ? Math.round(done / total * 100) : 0;
+
+    container.innerHTML = `
+      <div class="checklist-progress">
+        <div class="checklist-progress-bar"><div class="checklist-progress-fill" style="width:${pct}%"></div></div>
+        <div class="checklist-progress-text">${done}/${total} (${pct}%)</div>
+      </div>
+      <div class="checklist-section">
+        <h3>美赛 MCM/ICM</h3>
+        ${checklist.mcm.map(item => `
+          <label class="verify-item${saved[item.id] ? ' checked' : ''}">
+            <input type="checkbox" ${saved[item.id] ? 'checked' : ''} onchange="toggleChecklistItem('${item.id}', this.checked)">
+            <span class="verify-check-text">${item.text}</span>
+          </label>
+        `).join('')}
+      </div>
+      <div class="checklist-section">
+        <h3>国赛 CUMCM</h3>
+        ${checklist.cumcm.map(item => `
+          <label class="verify-item${saved[item.id] ? ' checked' : ''}">
+            <input type="checkbox" ${saved[item.id] ? 'checked' : ''} onchange="toggleChecklistItem('${item.id}', this.checked)">
+            <span class="verify-check-text">${item.text}</span>
+          </label>
+        `).join('')}
+      </div>
+    `;
+  }
+
+  window.toggleChecklistItem = function(id, checked) {
+    saved[id] = checked;
+    localStorage.setItem('mma-checklist', JSON.stringify(saved));
+    render();
+  };
+
+  render();
+}
+
+// ============================================================
+// Update keyboard shortcut — add Paper tab (6)
+// ============================================================
+// Monkey-patch the existing handler: add '6': 'paper' to tabKeys
+// Already handled in the unified handler — update tabKeys object
+(function updateShortcuts() {
+  const handler = document.addEventListener.toString();
+  // We redefine the keydown listener — actually just add paper in the
+  // existing tabKeys object. Since it's already registered, we override.
+  const origHandler = document.onkeydown;
+})();
+
+// Actually the tab keys are defined inline in the event listener.
+// We need to update it. Let's find and update via a different approach:
+// Add explicit paper tab switching via Ctrl+6
+document.addEventListener('keydown', function paperShortcut(e) {
+  if ((e.metaKey || e.ctrlKey) && e.key === '6') {
+    e.preventDefault();
+    const btn = document.querySelector('[data-tab="paper"]');
+    if (btn) btn.click();
+  }
+});

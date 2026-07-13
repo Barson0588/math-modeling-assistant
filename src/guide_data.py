@@ -42,6 +42,24 @@ GUIDE = {
         {"name": "Git", "use": "团队协作版本控制", "pkgs": "GitHub / Gitee"},
         {"name": "Zotero / Mendeley", "use": "参考文献管理", "pkgs": "-"},
     ],
+    "submission_checklist": {
+        "mcm": [
+            {"id": "mcm-abstract", "text": "摘要 200-250 词，无公式，无引用，单独成页"},
+            {"id": "mcm-pages", "text": "论文正文 + 附录 ≤ 25 页"},
+            {"id": "mcm-ai-report", "text": "AI Use Report 已附加（不计入 25 页限制）"},
+            {"id": "mcm-figures", "text": "所有图表有编号、标题（图标题在下，表标题在上）"},
+            {"id": "mcm-references", "text": "参考文献格式 APA 7th edition，15-20 条"},
+            {"id": "mcm-filename", "text": "文件命名符合 COMAP 规范（Team#XXXXX.pdf）"},
+            {"id": "mcm-signature", "text": "电子签名页已签署并附在论文后"},
+        ],
+        "cumcm": [
+            {"id": "cumcm-abstract", "text": "摘要单独一页，300 字左右，含关键词"},
+            {"id": "cumcm-cover", "text": "论文编号页完整（学校、队员、指导教师信息）"},
+            {"id": "cumcm-appendix", "text": "附录代码完整可运行，标注运行环境"},
+            {"id": "cumcm-pledge", "text": "承诺书已签署"},
+            {"id": "cumcm-filename", "text": "文件命名符合 CUMCM 规范"},
+        ],
+    },
     "code_standards": {
         "structure": "每个模型一个 .py 文件，main.py 统一调用",
         "naming": "函数用 snake_case，类用 PascalCase，变量名要有意义",

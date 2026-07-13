@@ -2,13 +2,14 @@ from flask import Flask, render_template, request, jsonify, Response, stream_wit
 from src.prompts import (
     ROLES_INFO, SYSTEM_MCM_EN, SYSTEM_MCM_CN, SYSTEM_AI_REPORT,
     PAPER_PROMPT, AI_REPORT_PROMPT, LATEX_TEMPLATE,
-    SYSTEM_PAPER, PAPER_FULL_PROMPT,
+    SYSTEM_PAPER, PAPER_FULL_PROMPT, SYSTEM_EXPLAIN, PAPER_LATEX_PROMPT,
 )
 from datetime import date
 from src.llm_client import generate_response, generate_stream
 from src.models_data import MODELS
 from src.problems_data import PROBLEMS
 from src.guide_data import GUIDE
+from src.scholar import search_by_keywords, format_references_apa
 
 app = Flask(__name__)
 
@@ -290,6 +291,116 @@ def ai_report():
 @app.route("/api/latex")
 def get_latex():
     return jsonify({"content": LATEX_TEMPLATE})
+
+
+# ===== API: Semantic Scholar =====
+
+@app.route("/api/scholar/search")
+def scholar_search():
+    q = request.args.get("q", "").strip()
+    if not q:
+        return jsonify({"error": "请输入搜索关键词"}), 400
+    keywords = [kw.strip() for kw in q.split(",") if kw.strip()]
+    papers = search_by_keywords(keywords, limit=10)
+    return jsonify({"papers": papers, "total": len(papers)})
+
+
+@app.route("/api/scholar/references", methods=["POST"])
+def scholar_references():
+    data = request.get_json()
+    titles = data.get("titles", [])
+    if not titles:
+        return jsonify({"error": "请提供论文标题列表"}), 400
+    papers = []
+    for t in titles[:5]:
+        results = search_by_keywords([t], limit=1)
+        if results:
+            papers.extend(results)
+    refs = format_references_apa(papers) if papers else []
+    return jsonify({"references": refs})
+
+
+# ===== API: Interactive Explanation =====
+
+@app.route("/api/explain", methods=["POST"])
+def explain_section():
+    data = request.get_json()
+    section_title = data.get("section_title", "").strip()
+    section_content = data.get("section_content", "").strip()
+
+    if not section_title or not section_content:
+        return jsonify({"error": "请提供章节标题和内容"}), 400
+
+    user_prompt = f"""请用通俗易懂的语言解释以下论文章节，适合大一新生理解。
+
+## 章节标题
+{section_title}
+
+## 章节内容
+{section_content[:2000]}
+
+请用生活类比和简单语言解释核心概念，避免复杂数学公式。最后用一句话总结核心要点。"""
+
+    try:
+        result = generate_response(SYSTEM_EXPLAIN, user_prompt, max_tokens=1500)
+        return jsonify({"content": result})
+    except Exception as e:
+        return jsonify({"error": f"解释生成失败: {str(e)}"}), 500
+
+
+# ===== API: LaTeX Paper Generation =====
+
+@app.route("/api/generate-paper/latex", methods=["POST"])
+def generate_paper_latex():
+    data = request.get_json()
+    problem = data.get("problem", "").strip()
+    requirements = data.get("requirements", "").strip()
+    contest_type = data.get("contest_type", "MCM/ICM")
+    problem_type = data.get("problem_type", "A")
+    problem_category = data.get("problem_category", "连续型")
+
+    if not problem:
+        return jsonify({"error": "请输入题目描述"}), 400
+
+    if contest_type == "CUMCM":
+        language_instruction = "使用中文撰写完整论文，按国赛格式。"
+        language_block = ""
+    else:
+        language_instruction = "Write the complete paper in ENGLISH. Follow MCM/ICM standards."
+        language_block = "**IMPORTANT: Generate the complete paper in ENGLISH.**"
+
+    system_prompt = SYSTEM_PAPER.format(
+        contest_type=contest_type,
+        language_instruction=language_instruction,
+    )
+
+    user_prompt = PAPER_LATEX_PROMPT.format(
+        contest_type=contest_type,
+        problem_type=problem_type,
+        problem_category=problem_category,
+        problem=problem,
+        requirements=requirements or "无特殊要求",
+        language_block=language_block,
+    )
+
+    def generate():
+        try:
+            for chunk in generate_stream(system_prompt, user_prompt, max_tokens=12000):
+                for line in chunk.split('\n'):
+                    yield f"data: {line}\n"
+                yield '\n'
+            yield "data: [DONE]\n\n"
+        except Exception as e:
+            yield f"data: [ERROR] {e}\n\n"
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 if __name__ == "__main__":
