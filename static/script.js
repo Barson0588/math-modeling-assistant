@@ -1736,7 +1736,15 @@ function injectScholarButton() {
     btn.disabled = true;
 
     try {
-      const res = await fetch('/api/scholar/search?q=' + encodeURIComponent(keywords.slice(0, 200)));
+      // Extract meaningful keywords (2-3 comma-separated terms)
+      const kw = text.match(/数学|物理|模型|算法|优化|预测|分类|聚类|网络|回归|差分|微分|方程|机器学习|深度|神经|统计|概率|模拟|仿真/gi);
+      const searchQuery = kw ? [...new Set(kw)].slice(0, 3).join(',') : keywords.slice(0, 80);
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 25000);
+      const res = await fetch('/api/scholar/search?q=' + encodeURIComponent(searchQuery), { signal: controller.signal });
+      clearTimeout(timeoutId);
+
       const data = await res.json();
 
       let existing = resultContent.querySelector('.scholar-results');
@@ -1755,11 +1763,15 @@ function injectScholarButton() {
             </div>
           `).join('');
       } else {
-        div.innerHTML = '<div class="scholar-results"><h3>真实参考文献</h3><p style="color:var(--text-secondary);font-size:13px">未找到相关文献，建议调整关键词或手动检索</p></div>';
+        div.innerHTML = '<div class="scholar-results"><h3>真实参考文献</h3><p style="color:var(--text-secondary);font-size:13px">未找到相关文献。Semantic Scholar API 可能暂时不可用，建议稍后重试或使用 <a href="https://scholar.google.com" target="_blank" rel="noopener">Google Scholar</a> 手动检索。</p></div>';
       }
       resultContent.appendChild(div);
     } catch (e) {
-      showToast('文献检索失败');
+      if (e.name === 'AbortError') {
+        showToast('文献检索超时，Semantic Scholar 暂时不可用');
+      } else {
+        showToast('文献检索失败');
+      }
     } finally {
       btn.textContent = '检索真实文献';
       btn.disabled = false;

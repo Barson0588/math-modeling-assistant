@@ -437,9 +437,9 @@ def verify_references():
     if not refs_found:
         return jsonify({"error": "未在论文中找到参考文献"}), 400
 
-    # Search each reference against Semantic Scholar
+    # Search first 3 references against Semantic Scholar (keep it responsive)
     results = []
-    for ref in refs_found[:10]:
+    for ref in refs_found[:3]:
         # Extract likely title (first sentence or quoted text)
         title_guess = ref.split('.')[0].strip() if '.' in ref else ref[:100]
         # Remove author names for cleaner search

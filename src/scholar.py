@@ -13,22 +13,25 @@ BASE_URL = "https://api.semanticscholar.org/graph/v1"
 FIELDS = "title,authors,year,citationCount,externalIds,url,abstract"
 
 
-def _fetch_json(url, retries=2):
+def _fetch_json(url, retries=1, timeout=8):
     """Fetch JSON from URL with retry for 429 rate limits."""
     for attempt in range(retries + 1):
         req = urllib.request.Request(url)
         req.add_header("User-Agent", "MathModelingAssistant/1.0 (mailto:wuqqi@example.com)")
         req.add_header("Accept", "application/json")
         try:
-            with urllib.request.urlopen(req, timeout=15) as resp:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
                 return json.loads(resp.read().decode("utf-8"))
         except urllib.error.HTTPError as e:
             if e.code == 429 and attempt < retries:
-                time.sleep(3 * (attempt + 1))
+                time.sleep(2 * (attempt + 1))
             else:
                 return {}
         except Exception:
-            return {}
+            if attempt < retries:
+                time.sleep(1)
+            else:
+                return {}
     return {}
 
 
@@ -56,7 +59,6 @@ def search_papers(query, limit=10):
             "abstract": (item.get("abstract") or "")[:300],
         })
 
-    time.sleep(0.5)
     return papers
 
 
@@ -65,8 +67,8 @@ def search_by_keywords(keywords, limit=10):
     all_papers = []
     seen = set()
 
-    # Use the first 2-3 most specific keywords
-    for kw in keywords[:3]:
+    # Only search the first 2 keywords to stay responsive
+    for kw in keywords[:2]:
         papers = search_papers(kw, limit=5)
         for p in papers:
             if p["title"] not in seen:
