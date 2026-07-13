@@ -187,7 +187,11 @@ def generate_stream_endpoint():
     def generate():
         try:
             for chunk in generate_stream(system_prompt, user_prompt):
-                yield f"data: {chunk}\n\n"
+                # Proper SSE framing: each line of the chunk gets its own "data:" prefix.
+                # Empty line (\n\n) marks end of one SSE message.
+                for line in chunk.split('\n'):
+                    yield f"data: {line}\n"
+                yield '\n'
             yield "data: [DONE]\n\n"
         except Exception as e:
             yield f"data: [ERROR] {e}\n\n"

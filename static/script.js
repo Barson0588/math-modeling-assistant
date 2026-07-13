@@ -66,6 +66,12 @@ let problemsReady = false;
         pData.years.map(y => `<option value="${y}">${y}</option>`).join('');
     }
 
+    // Update stats bar with real numbers
+    const statModels = document.getElementById('stat-models');
+    const statProblems = document.getElementById('stat-problems');
+    if (statModels) statModels.textContent = allModels.length;
+    if (statProblems) statProblems.textContent = allProblems.length;
+
     // Pre-render into the grid so it's ready when user switches tabs
     renderModelGrid(allModels);
     updateModelCount(allModels.length);
@@ -568,6 +574,7 @@ generateBtn.addEventListener('click', async () => {
     const decoder = new TextDecoder();
     let buffer = '';
     let chunkCount = 0;
+    let msgLines = [];  // accumulate data: lines for current SSE message
 
     while (true) {
       const { done, value } = await reader.read();
@@ -578,18 +585,24 @@ generateBtn.addEventListener('click', async () => {
       buffer = lines.pop() || '';
 
       for (const line of lines) {
-        if (!line.startsWith('data: ')) continue;
-        const data = line.slice(6);
-        if (data === '[DONE]') continue;
-        if (data.startsWith('[ERROR]')) { errorOccurred = true; throw new Error(data.slice(8)); }
-
-        fullContent += data;
-        chunkCount++;
-        // Render progressively (debounce: every 10 chunks)
-        if (chunkCount % 10 === 0 || fullContent.length < 200) {
-          resultContent.innerHTML = marked.parse(fullContent) + '<span class="streaming-cursor"></span>';
-          injectCodeCopyButtons(resultContent);
+        // SSE message boundary: empty line (or just \r)
+        if (line === '' || line === '\r') {
+          if (msgLines.length > 0) {
+            const data = msgLines.join('\n');
+            msgLines = [];
+            if (data === '[DONE]') continue;
+            if (data.startsWith('[ERROR]')) { errorOccurred = true; throw new Error(data.slice(8)); }
+            fullContent += data;
+            chunkCount++;
+            if (chunkCount % 10 === 0 || fullContent.length < 200) {
+              resultContent.innerHTML = marked.parse(fullContent) + '<span class="streaming-cursor"></span>';
+              injectCodeCopyButtons(resultContent);
+            }
+          }
+        } else if (line.startsWith('data: ')) {
+          msgLines.push(line.slice(6));
         }
+        // ignore comment lines (starting with :)
       }
     }
 
