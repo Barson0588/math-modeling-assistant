@@ -1447,12 +1447,69 @@ footer { text-align: center; padding: 24px; color: var(--text-secondary); font-s
   margin-top: 6px;
 }
 
+.quick-action-btn.score-action:hover {
+  border-color: #eab308;
+  background: #fefce8;
+  color: #ca8a04;
+}
+[data-theme="dark"] .quick-action-btn.score-action:hover {
+  background: #3d3404;
+  color: #facc15;
+}
+.quick-action-btn.figures-action:hover {
+  border-color: #ec4899;
+  background: #fdf2f8;
+  color: #db2777;
+}
+[data-theme="dark"] .quick-action-btn.figures-action:hover {
+  background: #3d0a28;
+  color: #f472b6;
+}
+.quick-action-btn.compare-action:hover {
+  border-color: #14b8a6;
+  background: #f0fdfa;
+  color: #0d9488;
+}
+[data-theme="dark"] .quick-action-btn.compare-action:hover {
+  background: #042f2e;
+  color: #2dd4bf;
+}
+
+/* Paper score report */
+.paper-score-report table,
+.paper-compare-report table {
+  width: 100%; border-collapse: collapse; margin: 12px 0;
+}
+.paper-score-report th,
+.paper-score-report td,
+.paper-compare-report th,
+.paper-compare-report td {
+  padding: 8px 12px; border: 1px solid var(--border); font-size: 13px;
+}
+.paper-score-report th,
+.paper-compare-report th {
+  background: var(--table-header-bg); font-weight: 700; text-align: left;
+}
+
 /* Abstract / Sensitivity report styles */
 .abstract-refine-report h4,
-.sensitivity-report h4 {
+.sensitivity-report h4,
+.paper-score-report h4,
+.figure-suggest-report h4,
+.model-recommend-report h4,
+.paper-compare-report h4 {
   font-size: 14px; font-weight: 700; margin: 12px 0 6px;
 }
-.sensitivity-report pre { margin: 8px 0; }
+.sensitivity-report pre,
+.figure-suggest-report pre { margin: 8px 0; }
+
+/* Model recommend button (in result toolbar) */
+.model-recommend-btn {
+  background: var(--accent-light) !important;
+  color: var(--accent) !important;
+  border-color: var(--accent) !important;
+  font-weight: 600 !important;
+}
 
 /* ============================================================
    Responsive — improved mobile experience

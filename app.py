@@ -6,6 +6,10 @@ from src.prompts import (
     SYSTEM_MATH_VERIFY, SYSTEM_PLAGIARISM,
     SYSTEM_ABSTRACT_REFINE, ABSTRACT_REFINE_PROMPT,
     SYSTEM_SENSITIVITY, SENSITIVITY_PROMPT,
+    SYSTEM_PAPER_SCORING, PAPER_SCORING_PROMPT,
+    SYSTEM_MODEL_RECOMMEND, MODEL_RECOMMEND_PROMPT,
+    SYSTEM_FIGURE_SUGGEST, FIGURE_SUGGEST_PROMPT,
+    SYSTEM_PAPER_COMPARE, PAPER_COMPARE_PROMPT,
 )
 from datetime import date
 from src.llm_client import generate_response, generate_stream
@@ -612,6 +616,120 @@ def generate_sensitivity():
         return jsonify({"content": result})
     except Exception as e:
         return jsonify({"error": f"敏感性分析生成失败: {str(e)}"}), 500
+
+
+# ===== API: AI Paper Scoring =====
+
+@app.route("/api/score-paper", methods=["POST"])
+def score_paper():
+    data = request.get_json()
+    content = data.get("content", "").strip()
+    contest_type = data.get("contest_type", "MCM/ICM")
+
+    if not content:
+        return jsonify({"error": "请提供论文内容"}), 400
+
+    if contest_type == "CUMCM":
+        language_instruction = "使用中文进行评估。"
+    else:
+        language_instruction = "Provide all feedback in English."
+
+    user_prompt = PAPER_SCORING_PROMPT.format(
+        content=content[:8000],
+        contest_type=contest_type,
+        language_instruction=language_instruction,
+    )
+
+    try:
+        result = generate_response(SYSTEM_PAPER_SCORING, user_prompt, max_tokens=2500)
+        return jsonify({"content": result})
+    except Exception as e:
+        return jsonify({"error": f"论文评分失败: {str(e)}"}), 500
+
+
+# ===== API: Smart Model Recommendation =====
+
+@app.route("/api/recommend-models", methods=["POST"])
+def recommend_models():
+    data = request.get_json()
+    problem = data.get("problem", "").strip()
+    contest_type = data.get("contest_type", "MCM/ICM")
+    problem_type = data.get("problem_type", "A")
+
+    if not problem:
+        return jsonify({"error": "请输入题目描述"}), 400
+
+    if contest_type == "CUMCM":
+        language_instruction = "使用中文回答。"
+    else:
+        language_instruction = "Answer in English."
+
+    user_prompt = MODEL_RECOMMEND_PROMPT.format(
+        problem=problem,
+        contest_type=contest_type,
+        problem_type=problem_type,
+        language_instruction=language_instruction,
+    )
+
+    try:
+        result = generate_response(SYSTEM_MODEL_RECOMMEND, user_prompt, max_tokens=2000)
+        return jsonify({"content": result})
+    except Exception as e:
+        return jsonify({"error": f"模型推荐失败: {str(e)}"}), 500
+
+
+# ===== API: Figure Suggestion =====
+
+@app.route("/api/suggest-figures", methods=["POST"])
+def suggest_figures():
+    data = request.get_json()
+    content = data.get("content", "").strip()
+    contest_type = data.get("contest_type", "MCM/ICM")
+
+    if not content:
+        return jsonify({"error": "请提供论文内容"}), 400
+
+    if contest_type == "CUMCM":
+        language_instruction = "使用中文注释。"
+    else:
+        language_instruction = "Use English comments."
+
+    user_prompt = FIGURE_SUGGEST_PROMPT.format(
+        content=content[:6000],
+        contest_type=contest_type,
+        language_instruction=language_instruction,
+    )
+
+    try:
+        result = generate_response(SYSTEM_FIGURE_SUGGEST, user_prompt, max_tokens=3000)
+        return jsonify({"content": result})
+    except Exception as e:
+        return jsonify({"error": f"图表建议生成失败: {str(e)}"}), 500
+
+
+# ===== API: Paper Comparison =====
+
+@app.route("/api/compare-papers", methods=["POST"])
+def compare_papers():
+    data = request.get_json()
+    content_a = data.get("content_a", "").strip()
+    content_b = data.get("content_b", "").strip()
+    contest_type = data.get("contest_type", "MCM/ICM")
+
+    if not content_a or not content_b:
+        return jsonify({"error": "请提供两版论文内容"}), 400
+
+    user_prompt = PAPER_COMPARE_PROMPT.format(
+        content_a=content_a[:4000],
+        content_b=content_b[:4000],
+        contest_type=contest_type,
+    )
+
+    try:
+        result = generate_response(SYSTEM_PAPER_COMPARE, user_prompt, max_tokens=2500)
+        return jsonify({"content": result})
+    except Exception as e:
+        return jsonify({"error": f"论文对比失败: {str(e)}"}), 500
 
 
 if __name__ == "__main__":

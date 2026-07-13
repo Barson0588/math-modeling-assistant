@@ -623,6 +623,7 @@ generateBtn.addEventListener('click', async () => {
     injectExplainButtons(resultContent);
     injectQuickActions();
     injectScholarButton();
+    injectModelRecommendBtn();
     if (!errorOccurred && fullContent) {
       saveHistory(problem, contestType, problemType, fullContent);
       saveDraft(problem, contestType, problemType, fullContent);
@@ -1907,6 +1908,9 @@ function injectQuickActions() {
     <button class="quick-action-btn sensitivity-action" id="qa-sensitivity-btn" title="生成敏感性分析 Python 代码">📊 敏感性分析</button>
     <button class="quick-action-btn verify-refs-action" id="qa-verify-refs-btn" title="交叉验证参考文献是否真实存在">📚 验证引用</button>
     <button class="quick-action-btn verify-math-action" id="qa-verify-math-btn" title="独立复核数学推导的正确性">📐 验证推导</button>
+    <button class="quick-action-btn score-action" id="qa-score-btn" title="按 COMAP 评审标准打分">🎯 论文评分</button>
+    <button class="quick-action-btn figures-action" id="qa-figures-btn" title="智能推荐论文需要的图表并生成代码">📈 图表建议</button>
+    <button class="quick-action-btn compare-action" id="qa-compare-btn" title="与上一版论文并排对比分析">🔄 对比论文</button>
   `;
 
   // Insert after the result toolbar
@@ -1924,6 +1928,9 @@ function injectQuickActions() {
   bar.querySelector('#qa-sensitivity-btn').addEventListener('click', runSensitivityAnalysis);
   bar.querySelector('#qa-verify-refs-btn').addEventListener('click', runReferenceCheck);
   bar.querySelector('#qa-verify-math-btn').addEventListener('click', runMathCheck);
+  bar.querySelector('#qa-score-btn').addEventListener('click', runPaperScore);
+  bar.querySelector('#qa-figures-btn').addEventListener('click', runFigureSuggest);
+  bar.querySelector('#qa-compare-btn').addEventListener('click', runPaperCompare);
 }
 
 let editModeActive = false;
@@ -2125,6 +2132,143 @@ async function runSensitivityAnalysis() {
     div.scrollIntoView({ behavior: 'smooth' });
   } catch (e) { showToast('敏感性分析生成失败'); }
   finally { btn.innerHTML = '📊 敏感性分析'; btn.disabled = false; }
+}
+
+// ============================================================
+// AI Paper Scoring — COMAP Rubric
+// ============================================================
+async function runPaperScore() {
+  const btn = document.getElementById('qa-score-btn');
+  const resultContent = getActiveContent();
+  const text = resultContent ? resultContent.innerText : '';
+  if (!text.trim()) { showToast('没有可评分的论文内容'); return; }
+
+  btn.innerHTML = '⏳ 评分中...'; btn.disabled = true;
+  try {
+    const contestType = document.getElementById('paper-contest-type')?.value || 'MCM/ICM';
+    const res = await fetch('/api/score-paper', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: text, contest_type: contestType }),
+    });
+    const data = await res.json();
+    let existing = resultContent.querySelector('.paper-score-report');
+    if (existing) existing.remove();
+    const div = document.createElement('div');
+    div.className = 'verify-report paper-score-report';
+    div.innerHTML = data.error
+      ? `<p class="error-msg">${escapeHtml(data.error)}</p>`
+      : `<h3>论文评审报告</h3><div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">按 COMAP 标准评分 (创新40% + 表达30% + 建模30%)</div>${marked.parse(data.content)}`;
+    resultContent.appendChild(div);
+    div.scrollIntoView({ behavior: 'smooth' });
+  } catch (e) { showToast('论文评分失败'); }
+  finally { btn.innerHTML = '🎯 论文评分'; btn.disabled = false; }
+}
+
+// ============================================================
+// Figure Suggestion
+// ============================================================
+async function runFigureSuggest() {
+  const btn = document.getElementById('qa-figures-btn');
+  const resultContent = getActiveContent();
+  const text = resultContent ? resultContent.innerText : '';
+  if (!text.trim()) { showToast('没有可分析的论文内容'); return; }
+
+  btn.innerHTML = '⏳ 分析中...'; btn.disabled = true;
+  try {
+    const contestType = document.getElementById('paper-contest-type')?.value || 'MCM/ICM';
+    const res = await fetch('/api/suggest-figures', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: text, contest_type: contestType }),
+    });
+    const data = await res.json();
+    let existing = resultContent.querySelector('.figure-suggest-report');
+    if (existing) existing.remove();
+    const div = document.createElement('div');
+    div.className = 'verify-report figure-suggest-report';
+    div.innerHTML = data.error
+      ? `<p class="error-msg">${escapeHtml(data.error)}</p>`
+      : `<h3>图表建议与代码</h3><div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">论文各章节推荐图表及其 matplotlib 代码</div>${marked.parse(data.content)}`;
+    resultContent.appendChild(div);
+    injectCodeCopyButtons(div);
+    div.scrollIntoView({ behavior: 'smooth' });
+  } catch (e) { showToast('图表建议生成失败'); }
+  finally { btn.innerHTML = '📈 图表建议'; btn.disabled = false; }
+}
+
+// ============================================================
+// Paper Comparison — compare with previous version
+// ============================================================
+async function runPaperCompare() {
+  const btn = document.getElementById('qa-compare-btn');
+  const resultContent = getActiveContent();
+  const text = resultContent ? resultContent.innerText : '';
+  if (!text.trim()) { showToast('没有可对比的论文内容'); return; }
+
+  // Get previous version from paper history
+  const history = getPaperHistory();
+  if (history.length === 0) {
+    showToast('没有历史版本可对比。请先生成一篇论文，修改后再生成一篇来进行对比。');
+    return;
+  }
+
+  btn.innerHTML = '⏳ 对比中...'; btn.disabled = true;
+  try {
+    const contestType = document.getElementById('paper-contest-type')?.value || 'MCM/ICM';
+    const res = await fetch('/api/compare-papers', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content_a: history[0].content.slice(0, 4000), content_b: text.slice(0, 4000), contest_type: contestType }),
+    });
+    const data = await res.json();
+    let existing = resultContent.querySelector('.paper-compare-report');
+    if (existing) existing.remove();
+    const div = document.createElement('div');
+    div.className = 'verify-report paper-compare-report';
+    div.innerHTML = data.error
+      ? `<p class="error-msg">${escapeHtml(data.error)}</p>`
+      : `<h3>论文对比报告</h3><div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">当前版本 vs 上一版 (${escapeHtml(history[0].problem).slice(0, 60)}...)</div>${marked.parse(data.content)}`;
+    resultContent.appendChild(div);
+    div.scrollIntoView({ behavior: 'smooth' });
+  } catch (e) { showToast('论文对比失败'); }
+  finally { btn.innerHTML = '🔄 对比论文'; btn.disabled = false; }
+}
+
+// ============================================================
+// Smart Model Recommendation — for Generator tab
+// ============================================================
+function injectModelRecommendBtn() {
+  const actions = document.querySelector('.result-card.visible .result-actions');
+  if (!actions || actions.querySelector('.model-recommend-btn')) return;
+
+  const btn = document.createElement('button');
+  btn.className = 'btn-sm model-recommend-btn';
+  btn.textContent = '智能推荐模型';
+  btn.title = 'AI 分析题目推荐最佳数学模型';
+  btn.addEventListener('click', async () => {
+    const problem = document.getElementById('problem')?.value.trim();
+    if (!problem) { showToast('请先在 Generator 输入题目'); return; }
+    const resultContent = document.getElementById('result-content');
+    btn.textContent = '推荐中...'; btn.disabled = true;
+    try {
+      const contestType = document.getElementById('contest-type')?.value || 'MCM/ICM';
+      const problemType = document.getElementById('problem-type')?.value || 'A';
+      const res = await fetch('/api/recommend-models', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ problem, contest_type: contestType, problem_type: problemType }),
+      });
+      const data = await res.json();
+      let existing = resultContent.querySelector('.model-recommend-report');
+      if (existing) existing.remove();
+      const div = document.createElement('div');
+      div.className = 'verify-report model-recommend-report';
+      div.innerHTML = data.error
+        ? `<p class="error-msg">${escapeHtml(data.error)}</p>`
+        : `<h3>智能模型推荐</h3><div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">基于题目描述的最优模型建议</div>${marked.parse(data.content)}`;
+      resultContent.appendChild(div);
+      div.scrollIntoView({ behavior: 'smooth' });
+    } catch (e) { showToast('模型推荐失败'); }
+    finally { btn.textContent = '智能推荐模型'; btn.disabled = false; }
+  });
+  actions.appendChild(btn);
 }
 
 // ============================================================

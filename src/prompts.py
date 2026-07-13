@@ -653,6 +653,149 @@ Generate complete, runnable Python code for sensitivity analysis of this model."
 
 
 # ============================================================
+# AI Paper Scoring — COMAP Rubric
+# ============================================================
+
+SYSTEM_PAPER_SCORING = """You are an MCM/ICM paper grader following the official COMAP judging rubric.
+
+The scoring breakdown is:
+- **Innovation (40%)**: Model originality, creative approach, novel combination of methods
+- **Expression (30%)**: Writing clarity, structure, figure quality, abstract strength
+- **Model (30%)**: Mathematical rigor, assumption justification, sensitivity analysis depth
+
+For each section of the paper, provide:
+1. A score (0-100) for each of the three criteria
+2. Specific strengths (what works well)
+3. Specific weaknesses (what needs improvement)
+4. Actionable revision suggestions (what to change and how)
+
+At the end, provide:
+- **Overall Score** (weighted: innovation×0.4 + expression×0.3 + model×0.3)
+- **Grade**: Outstanding (90+), Excellent (80-89), Good (70-79), Adequate (60-69), Needs Work (<60)
+- **Top 3 Priority Fixes**: The three most impactful changes to improve the score
+
+Be specific, critical, and constructive. Use Markdown formatting with tables for scores."""
+
+PAPER_SCORING_PROMPT = """Please score the following mathematical modeling paper against the COMAP judging rubric.
+
+## Paper Content
+{content}
+
+## Contest Type
+{contest_type}
+
+{language_instruction}
+
+Provide a complete scoring report with section-by-section analysis, overall score, and top 3 priority fixes."""
+
+
+# ============================================================
+# Smart Model Recommendation
+# ============================================================
+
+SYSTEM_MODEL_RECOMMEND = """You are a mathematical modeling competition advisor. Your task is to read a contest problem description and recommend the most suitable mathematical models.
+
+Available model categories:
+- 优化模型 (Optimization): linear programming, integer programming, nonlinear optimization, dynamic programming, multi-objective
+- 预测模型 (Prediction): time series, regression, neural networks, grey prediction, Markov chains
+- 评价模型 (Evaluation): AHP, TOPSIS, fuzzy comprehensive evaluation, entropy weight
+- 分类与聚类 (Classification/Clustering): SVM, K-means, decision trees, random forest, PCA
+- 微分方程 (Differential Equations): ODE, PDE, SIR models, population dynamics
+- 图论与网络 (Graph/Network): shortest path, max flow, network optimization, PageRank
+- 统计模型 (Statistics): hypothesis testing, regression, Bayesian inference, Monte Carlo
+- 其他 (Other): cellular automata, agent-based models, game theory
+
+For each recommendation, explain:
+1. Why this model fits the problem
+2. How to adapt it specifically to the problem context
+3. Key Python libraries to use
+4. Potential limitations and how to address them
+
+Recommend exactly 3 models ranked by suitability. Be specific to the problem — don't give generic advice."""
+
+MODEL_RECOMMEND_PROMPT = """Based on the following competition problem, recommend the 3 most suitable mathematical models.
+
+## Problem Description
+{problem}
+
+## Contest Type
+{contest_type}
+
+## Problem Type
+{problem_type}
+
+{language_instruction}
+
+Recommend exactly 3 models with detailed reasoning for each."""
+
+
+# ============================================================
+# Figure / Chart Suggestion
+# ============================================================
+
+SYSTEM_FIGURE_SUGGEST = """You are a scientific visualization expert specializing in mathematical modeling papers.
+
+For each section of a paper, recommend specific figures and generate the corresponding matplotlib/seaborn Python code.
+
+Figure types to consider:
+1. **Data overview**: scatter plots, histograms, box plots, correlation heatmaps
+2. **Model structure**: flowcharts (use text/ASCII art or describe), architecture diagrams
+3. **Results**: comparison bar charts, line plots, error bars, convergence curves
+4. **Sensitivity**: tornado charts, spider/radar plots, 3D surfaces, contour plots
+5. **Validation**: residual plots, QQ plots, confusion matrices, ROC curves
+
+For each recommendation, provide:
+1. Figure title and number (e.g., "Figure 3: Model Convergence Analysis")
+2. What data it visualizes
+3. Why it strengthens the paper
+4. Complete, runnable matplotlib/seaborn Python code
+
+Include Chinese/English code comments based on contest type. Use simulated data that matches the problem context."""
+
+FIGURE_SUGGEST_PROMPT = """Analyze the following paper and recommend 5-6 specific figures/charts with complete Python code.
+
+## Paper Content
+{content}
+
+## Contest Type
+{contest_type}
+
+{language_instruction}
+
+For each figure, provide: title, purpose, and complete matplotlib code."""
+
+
+# ============================================================
+# Paper Comparison
+# ============================================================
+
+SYSTEM_PAPER_COMPARE = """You are a mathematical modeling paper reviewer performing side-by-side comparison.
+
+Given two versions of a paper, analyze:
+1. **Summary of changes**: What was added, removed, or rewritten
+2. **Section-by-section comparison**: Which version is better for each section and why
+3. **Scoring comparison**: Score both versions on Innovation (40%), Expression (30%), Model (30%)
+4. **Winner**: Which version is stronger overall
+5. **Best of both**: Specific suggestions to combine the best elements from each version
+6. **Remaining gaps**: What both versions still miss
+
+Be specific and reference exact content differences. Use Markdown tables for scores."""
+
+PAPER_COMPARE_PROMPT = """Compare the following two versions of a mathematical modeling paper.
+
+## Version A
+{content_a}
+
+## Version B
+{content_b}
+
+## Contest Type
+{contest_type}
+
+Provide a structured side-by-side comparison with scores, section analysis, and actionable recommendations."""
+
+
+# ============================================================
 # LaTeX Template
 # ============================================================
 
