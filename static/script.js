@@ -2366,7 +2366,7 @@ let editModeActive = false;
 let editModeContent = '';
 
 function toggleEditMode() {
-  const container = document.getElementById('result-content') || document.getElementById('paper-content');
+  const container = getActiveContent();
   if (!container) return;
   const btn = document.getElementById('qa-edit-btn');
 
@@ -2375,7 +2375,9 @@ function toggleEditMode() {
     editModeContent = container.innerText;
     if (btn) { btn.innerHTML = '👁️ 完成编辑'; btn.classList.add('active'); }
 
-    // Insert indicator + textarea with clear visual feedback
+    container.innerHTML = '';
+    container.classList.add('editing');
+
     const indicator = document.createElement('div');
     indicator.className = 'edit-mode-indicator';
     indicator.id = 'edit-mode-indicator';
@@ -2386,20 +2388,20 @@ function toggleEditMode() {
     textarea.className = 'edit-textarea';
     textarea.value = editModeContent;
     textarea.placeholder = '在此编辑论文内容...';
+    textarea.spellcheck = true;
 
-    container.innerHTML = '';
     container.appendChild(indicator);
     container.appendChild(textarea);
     textarea.focus();
 
-    // Scroll to the edit area
-    container.scrollIntoView({ behavior: 'smooth' });
+    container.scrollIntoView({ behavior: 'smooth', block: 'start' });
     showToast('编辑模式已开启，修改后点击「完成编辑」保存');
   } else {
     editModeActive = false;
     const textarea = document.getElementById('edit-textarea');
     const newContent = textarea ? textarea.value : editModeContent;
     if (btn) { btn.innerHTML = '✏️ 编辑论文'; btn.classList.remove('active'); }
+    container.classList.remove('editing');
     container.innerHTML = marked.parse(newContent);
     injectCodeCopyButtons(container);
     injectDisclaimer(container);
@@ -2413,7 +2415,11 @@ function toggleEditMode() {
 }
 
 function getActiveContent() {
-  return document.getElementById('result-content') || document.getElementById('paper-content');
+  const paperTab = document.getElementById('tab-paper');
+  if (paperTab && paperTab.classList.contains('active')) {
+    return document.getElementById('paper-content');
+  }
+  return document.getElementById('result-content');
 }
 
 async function runPlagiarismCheck() {

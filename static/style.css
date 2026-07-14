@@ -1319,22 +1319,6 @@ footer { text-align: center; padding: 24px; color: var(--text-secondary); font-s
   font-size: 11px; padding: 3px 10px;
 }
 
-/* ============================================================
-   Edit mode textarea
-   ============================================================ */
-.edit-textarea {
-  width: 100%; min-height: 60vh;
-  padding: 20px; border: 2px solid var(--amber);
-  border-radius: var(--radius-sm);
-  font-family: var(--mono); font-size: 14px; line-height: 1.7;
-  background: var(--surface); color: var(--text);
-  resize: vertical;
-  transition: border-color var(--transition);
-}
-.edit-textarea:focus {
-  outline: none; border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-glow);
-}
 
 /* ============================================================
    Plagiarism report
@@ -1732,13 +1716,14 @@ footer { text-align: center; padding: 24px; color: var(--text-secondary); font-s
   /* Countdown compact */
   .countdown-grid { grid-template-columns: 1fr; }
   .countdown-timer { font-size: 24px; }
+}
 
 /* ============================================================
    Result Sidebar — slide-in panel for quick action outputs
    ============================================================ */
 .result-sidebar {
   position: fixed; top: 0; right: 0; width: 520px; max-width: 100vw;
-  height: 100vh; z-index: 9999; background: var(--card-bg);
+  height: 100vh; z-index: 9999; background: var(--surface);
   box-shadow: -4px 0 24px rgba(0,0,0,.15);
   transform: translateX(100%); transition: transform .3s cubic-bezier(.4,0,.2,1);
   display: flex; flex-direction: column;
@@ -1834,8 +1819,19 @@ footer { text-align: center; padding: 24px; color: var(--text-secondary); font-s
 }
 .edit-textarea {
   width: 100%; min-height: 50vh; padding: 20px; border: 2px solid #3b82f6;
-  border-radius: 8px; font-size: 14px; line-height: 1.6; font-family: inherit;
-  resize: vertical; background: var(--card-bg); color: var(--text);
+  border-radius: 8px; font-size: 14px; line-height: 1.6; font-family: var(--mono);
+  resize: vertical; background: var(--surface); color: var(--text);
+  box-sizing: border-box;
 }
 [data-theme="dark"] .edit-textarea { border-color: #60a5fa; }
+
+/* Remove print constraints during editing */
+.paper-page.editing {
+  max-width: none; min-height: auto; padding: 0;
+  background: transparent; font-family: var(--font); font-size: 14px;
+  text-align: left; box-shadow: none;
+}
+.markdown-body.editing {
+  max-width: none; min-height: auto; padding: 0;
+  background: transparent;
 }
