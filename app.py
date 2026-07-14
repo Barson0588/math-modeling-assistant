@@ -11,6 +11,7 @@ from src.prompts import (
     SYSTEM_FIGURE_SUGGEST, FIGURE_SUGGEST_PROMPT,
     SYSTEM_PAPER_COMPARE, PAPER_COMPARE_PROMPT,
     SYSTEM_PAPER_ANALYZE, PAPER_ANALYZE_PROMPT,
+    SYSTEM_MOCK_REVIEW, MOCK_REVIEW_PROMPT,
 )
 from datetime import date
 from src.llm_client import generate_response, generate_stream
@@ -731,6 +732,46 @@ def compare_papers():
         return jsonify({"content": result})
     except Exception as e:
         return jsonify({"error": f"论文对比失败: {str(e)}"}), 500
+
+
+# ===== API: Key Check =====
+
+@app.route("/api/check-key", methods=["GET"])
+def check_key():
+    import config
+    key = config.DEEPSEEK_API_KEY
+    if not key or key == "your-api-key-here":
+        return jsonify({"status": "missing"})
+    if not key.startswith("sk-"):
+        return jsonify({"status": "invalid_format"})
+    # Quick liveness test — minimal call
+    try:
+        resp = generate_response(
+            "You are a helpful assistant.", "Reply with just: OK",
+            max_tokens=5,
+        )
+        return jsonify({"status": "ok"}) if resp else jsonify({"status": "no_response"})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)[:200]})
+
+
+# ===== API: Mock COMAP Review =====
+
+@app.route("/api/mock-review", methods=["POST"])
+def mock_review():
+    data = request.get_json()
+    content = data.get("content", "").strip()
+    contest_type = data.get("contest_type", "MCM/ICM")
+
+    if not content:
+        return jsonify({"error": "请提供论文内容"}), 400
+
+    user_prompt = MOCK_REVIEW_PROMPT.format(content=content[:15000])
+    try:
+        result = generate_response(SYSTEM_MOCK_REVIEW, user_prompt, max_tokens=3000)
+        return jsonify({"content": result})
+    except Exception as e:
+        return jsonify({"error": f"模拟评审失败: {str(e)}"}), 500
 
 
 # ===== API: Winning Paper Analysis =====

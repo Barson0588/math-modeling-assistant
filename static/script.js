@@ -596,22 +596,30 @@ generateBtn.addEventListener('click', async () => {
 
   if (!problem) { showToast('请先输入竞赛题目'); return; }
 
+  if (_activeController) { _activeController.abort(); _activeController = null; }
+
   setButtonsLoading(generateBtn, true);
   aiReportBtn.disabled = true;
   resultDiv.classList.add('visible');
-  resultContent.innerHTML = '<div class="stage-indicator"><span class="stage-dot"></span>准备中...</div>';
+  resultContent.innerHTML = '<div class="stage-indicator"><span class="stage-dot"></span>准备中...<button class="btn-sm cancel-gen-btn" id="gen-cancel-btn">取消</button></div>';
   resultLabel.textContent = '生成结果';
   resultDiv.scrollIntoView({ behavior: 'smooth' });
   const stageEl = resultContent.querySelector('.stage-indicator');
+  document.getElementById('gen-cancel-btn').addEventListener('click', () => {
+    if (_activeController) { _activeController.abort(); _cancelBtnClicked = true; }
+  });
 
   let fullContent = '';
   let errorOccurred = false;
+  let _cancelBtnClicked = false;
+  _activeController = new AbortController();
 
   try {
     const res = await fetch('/api/generate/stream', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ problem, requirements, contest_type: contestType, problem_type: problemType, problem_category: mapProblemCategory(problemType) }),
+      signal: _activeController.signal,
     });
 
     if (!res.ok) {
@@ -671,14 +679,44 @@ generateBtn.addEventListener('click', async () => {
       saveDraft(problem, contestType, problemType, fullContent);
     }
   } catch (e) {
-    if (!errorOccurred) {
-      resultContent.innerHTML = `<p class="error-msg">生成失败: ${escapeHtml(e.message)} <button class="btn-sm" onclick="generateBtn.click()">重试</button></p>`;
+    _activeController = null;
+    if (e.name === 'AbortError') {
+      // Cancelled by user - keep partial content
+      if (fullContent) {
+        resultContent.innerHTML = marked.parse(fullContent);
+        injectCodeCopyButtons(resultContent);
+        buildTOC(resultContent);
+        injectDisclaimer(resultContent);
+        injectVerificationChecklist(resultContent);
+        injectExplainButtons(resultContent);
+        injectQuickActions();
+        saveHistory(problem, contestType, problemType, fullContent);
+        saveDraft(problem, contestType, problemType, fullContent);
+        resultLabel.textContent = '已取消（内容已保留）';
+      } else {
+        resultContent.innerHTML = '<p class="error-msg">已取消生成</p>';
+      }
+    } else if (!errorOccurred) {
+      // SSE error - show retry with partial content preserved
+      resultContent.innerHTML = (fullContent ? marked.parse(fullContent) + '<hr>' : '') +
+        `<p class="error-msg">生成中断: ${escapeHtml(e.message || '连接断开')} <button class="btn-sm" onclick="generateBtn.click()">重新生成</button></p>`;
+      if (fullContent) {
+        injectCodeCopyButtons(resultContent);
+        injectQuickActions();
+        saveHistory(problem, contestType, problemType, fullContent);
+        saveDraft(problem, contestType, problemType, fullContent);
+        resultLabel.textContent = '部分结果';
+      }
     }
   } finally {
+    _activeController = null;
     setButtonsLoading(generateBtn, false);
     aiReportBtn.disabled = false;
   }
 });
+
+// Global AbortController reference
+let _activeController = null;
 
 // AI Use Report
 aiReportBtn.addEventListener('click', async () => {
@@ -834,21 +872,29 @@ paperGenerateBtn.addEventListener('click', async () => {
 
   if (!problem) { showToast('请先输入竞赛题目'); return; }
 
+  if (_activeController) { _activeController.abort(); _activeController = null; }
+
   setButtonsLoading(paperGenerateBtn, true);
   paperResult.classList.add('visible');
-  paperContent.innerHTML = '<div class="stage-indicator"><span class="stage-dot"></span>准备中...</div>';
+  paperContent.innerHTML = '<div class="stage-indicator"><span class="stage-dot"></span>准备中...<button class="btn-sm cancel-gen-btn" id="paper-cancel-btn">取消</button></div>';
   paperResultLabel.textContent = '论文预览';
   paperResult.scrollIntoView({ behavior: 'smooth' });
+  document.getElementById('paper-cancel-btn').addEventListener('click', () => {
+    if (_activeController) { _activeController.abort(); _cancelPaperBtn = true; }
+  });
   const stageEl = paperContent.querySelector('.stage-indicator');
 
   let fullContent = '';
   let errorOccurred = false;
+  let _cancelPaperBtn = false;
+  _activeController = new AbortController();
 
   try {
     const res = await fetch('/api/generate-paper/stream', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ problem, requirements, contest_type: contestType, problem_type: problemType, problem_category: mapProblemCategory(problemType) }),
+      signal: _activeController.signal,
     });
 
     if (!res.ok) {
@@ -903,10 +949,33 @@ paperGenerateBtn.addEventListener('click', async () => {
       showToast('论文生成完成');
     }
   } catch (e) {
-    if (!errorOccurred) {
-      paperContent.innerHTML = `<p class="error-msg">生成失败: ${escapeHtml(e.message)} <button class="btn-sm" onclick="paperGenerateBtn.click()">重试</button></p>`;
+    _activeController = null;
+    if (e.name === 'AbortError') {
+      if (fullContent) {
+        paperContent.innerHTML = marked.parse(fullContent);
+        injectCodeCopyButtons(paperContent);
+        injectDisclaimer(paperContent);
+        injectVerificationChecklist(paperContent);
+        injectExplainButtons(paperContent);
+        injectPaperStats();
+        injectQuickActions();
+        savePaperHistory(problem, contestType, problemType, fullContent);
+        paperResultLabel.textContent = '已取消（内容已保留）';
+      } else {
+        paperContent.innerHTML = '<p class="error-msg">已取消生成</p>';
+      }
+    } else if (!errorOccurred) {
+      paperContent.innerHTML = (fullContent ? marked.parse(fullContent) + '<hr>' : '') +
+        `<p class="error-msg">生成中断: ${escapeHtml(e.message || '连接断开')} <button class="btn-sm" onclick="paperGenerateBtn.click()">重新生成</button></p>`;
+      if (fullContent) {
+        injectCodeCopyButtons(paperContent);
+        injectQuickActions();
+        savePaperHistory(problem, contestType, problemType, fullContent);
+        paperResultLabel.textContent = '部分结果';
+      }
     }
   } finally {
+    _activeController = null;
     setButtonsLoading(paperGenerateBtn, false);
   }
 });
@@ -1422,6 +1491,30 @@ function checkDraft() {
 // Check for saved draft on page load
 checkDraft();
 restoreInputs();
+
+// API Key pre-check on load
+(async function checkApiKey() {
+  try {
+    const res = await fetch('/api/check-key');
+    const data = await res.json();
+    if (data.status === 'missing') {
+      const banner = document.createElement('div');
+      banner.className = 'api-key-banner';
+      banner.innerHTML = '未配置 DeepSeek API Key，请创建 <code>~/.math-modeling-assistant/.env</code> 文件并填入密钥 <button class="btn-sm" onclick="this.parentElement.remove()">知道了</button>';
+      document.querySelector('header').insertAdjacentElement('afterend', banner);
+    } else if (data.status === 'invalid_format') {
+      const banner = document.createElement('div');
+      banner.className = 'api-key-banner warn';
+      banner.innerHTML = `API Key 格式可能不正确（应以 sk- 开头），请检查配置文件 <button class="btn-sm" onclick="this.parentElement.remove()">知道了</button>`;
+      document.querySelector('header').insertAdjacentElement('afterend', banner);
+    } else if (data.status === 'error') {
+      const banner = document.createElement('div');
+      banner.className = 'api-key-banner warn';
+      banner.innerHTML = `API 连接失败: ${escapeHtml(data.message || '请检查网络和 Key 有效性')} <button class="btn-sm" onclick="this.parentElement.remove()">知道了</button>`;
+      document.querySelector('header').insertAdjacentElement('afterend', banner);
+    }
+  } catch (e) { /* silent */ }
+})();
 
 // ============================================================
 // Utilities
@@ -2192,6 +2285,7 @@ function injectQuickActions() {
     <button class="quick-action-btn score-action" id="qa-score-btn" title="按 COMAP 评审标准打分">🎯 论文评分</button>
     <button class="quick-action-btn figures-action" id="qa-figures-btn" title="智能推荐论文需要的图表并生成代码">📈 图表建议</button>
     <button class="quick-action-btn compare-action" id="qa-compare-btn" title="与上一版论文并排对比分析">🔄 对比论文</button>
+    <button class="quick-action-btn review-action" id="qa-review-btn" title="AI 扮演 COMAP 评委，按官方评分标准逐项打分">🏅 模拟评审</button>
     <button class="quick-action-btn export-action" id="qa-export-btn" title="打包导出论文.md + 代码.py + 参考文献.bib">📦 导出项目</button>
   `;
 
@@ -2213,6 +2307,7 @@ function injectQuickActions() {
   bar.querySelector('#qa-score-btn').addEventListener('click', runPaperScore);
   bar.querySelector('#qa-figures-btn').addEventListener('click', runFigureSuggest);
   bar.querySelector('#qa-compare-btn').addEventListener('click', runPaperCompare);
+  bar.querySelector('#qa-review-btn').addEventListener('click', runMockReview);
   bar.querySelector('#qa-export-btn').addEventListener('click', exportProjectBundle);
 }
 
@@ -2476,6 +2571,33 @@ async function runFigureSuggest() {
     div.scrollIntoView({ behavior: 'smooth' });
   } catch (e) { showToast('图表建议生成失败'); }
   finally { btn.innerHTML = '📈 图表建议'; btn.disabled = false; }
+}
+
+// ============================================================
+// Mock COMAP Review
+// ============================================================
+async function runMockReview() {
+  const btn = document.getElementById('qa-review-btn');
+  const resultContent = getActiveContent();
+  const content = resultContent ? resultContent.innerText : '';
+  if (!content.trim()) { showToast('没有可评审的内容'); return; }
+
+  btn.innerHTML = '⏳ 评审中...'; btn.disabled = true;
+  try {
+    const res = await fetch('/api/mock-review', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content }),
+    });
+    const data = await res.json();
+    let existing = resultContent.querySelector('.review-report');
+    if (existing) existing.remove();
+    const div = document.createElement('div');
+    div.className = 'review-report';
+    div.innerHTML = data.error ? `<p class="error-msg">${escapeHtml(data.error)}</p>` : marked.parse(data.content);
+    resultContent.appendChild(div);
+    div.scrollIntoView({ behavior: 'smooth' });
+  } catch (e) { showToast('模拟评审失败'); }
+  finally { btn.innerHTML = '🏅 模拟评审'; btn.disabled = false; }
 }
 
 // ============================================================
