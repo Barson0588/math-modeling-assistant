@@ -2311,6 +2311,57 @@ function injectQuickActions() {
   bar.querySelector('#qa-export-btn').addEventListener('click', exportProjectBundle);
 }
 
+// ============================================================
+// Result Sidebar — slide-in panel for all quick action outputs
+// ============================================================
+function ensureSidebar() {
+  if (document.getElementById('result-sidebar')) return;
+  const backdrop = document.createElement('div');
+  backdrop.className = 'result-sidebar-backdrop';
+  backdrop.id = 'result-sidebar-backdrop';
+  backdrop.addEventListener('click', closeSidebar);
+  document.body.appendChild(backdrop);
+
+  const sidebar = document.createElement('div');
+  sidebar.className = 'result-sidebar';
+  sidebar.id = 'result-sidebar';
+  sidebar.innerHTML = `
+    <div class="result-sidebar-header">
+      <h3 id="sidebar-title">结果</h3>
+      <button class="close-btn" onclick="closeSidebar()">&times;</button>
+    </div>
+    <div class="result-sidebar-body" id="sidebar-body"></div>
+  `;
+  document.body.appendChild(sidebar);
+}
+
+function openSidebar(title, htmlContent) {
+  ensureSidebar();
+  document.getElementById('sidebar-title').textContent = title;
+  document.getElementById('sidebar-body').innerHTML = htmlContent;
+  document.getElementById('result-sidebar').classList.add('open');
+  document.getElementById('result-sidebar-backdrop').classList.add('open');
+}
+
+function closeSidebar() {
+  document.getElementById('result-sidebar')?.classList.remove('open');
+  document.getElementById('result-sidebar-backdrop')?.classList.remove('open');
+}
+
+function showSidebar(title) {
+  ensureSidebar();
+  document.getElementById('sidebar-title').textContent = title;
+  document.getElementById('sidebar-body').innerHTML = '<div class="result-sidebar-loading"><div class="spinner"></div><span>分析中...</span></div>';
+  document.getElementById('result-sidebar').classList.add('open');
+  document.getElementById('result-sidebar-backdrop').classList.add('open');
+}
+
+function updateSidebarContent(htmlContent) {
+  const body = document.getElementById('sidebar-body');
+  if (body) body.innerHTML = htmlContent;
+}
+
+// ——— Edit Mode ———
 let editModeActive = false;
 let editModeContent = '';
 
@@ -2322,14 +2373,28 @@ function toggleEditMode() {
   if (!editModeActive) {
     editModeActive = true;
     editModeContent = container.innerText;
-    if (btn) { btn.innerHTML = '👁️ 预览'; btn.classList.add('active'); }
+    if (btn) { btn.innerHTML = '👁️ 完成编辑'; btn.classList.add('active'); }
+
+    // Insert indicator + textarea with clear visual feedback
+    const indicator = document.createElement('div');
+    indicator.className = 'edit-mode-indicator';
+    indicator.id = 'edit-mode-indicator';
+    indicator.innerHTML = '✏️ 编辑模式 — 可直接修改论文内容 <button class="exit-edit-btn" onclick="toggleEditMode()">完成编辑</button>';
+
     const textarea = document.createElement('textarea');
     textarea.id = 'edit-textarea';
     textarea.className = 'edit-textarea';
     textarea.value = editModeContent;
+    textarea.placeholder = '在此编辑论文内容...';
+
     container.innerHTML = '';
+    container.appendChild(indicator);
     container.appendChild(textarea);
     textarea.focus();
+
+    // Scroll to the edit area
+    container.scrollIntoView({ behavior: 'smooth' });
+    showToast('编辑模式已开启，修改后点击「完成编辑」保存');
   } else {
     editModeActive = false;
     const textarea = document.getElementById('edit-textarea');
@@ -2342,6 +2407,7 @@ function toggleEditMode() {
     injectExplainButtons(container);
     buildTOC(container);
     injectDataSourceHighlights(container);
+    closeSidebar();
     showToast('内容已更新');
   }
 }
@@ -2356,6 +2422,7 @@ async function runPlagiarismCheck() {
   const text = resultContent ? resultContent.innerText : '';
   if (!text.trim()) { showToast('没有可查重的内容'); return; }
 
+  showSidebar('原创性分析');
   btn.innerHTML = '⏳ 查重中...'; btn.disabled = true;
   try {
     const res = await fetch('/api/check-plagiarism', {
@@ -2363,16 +2430,10 @@ async function runPlagiarismCheck() {
       body: JSON.stringify({ content: text }),
     });
     const data = await res.json();
-    let existing = resultContent.querySelector('.plagiarism-report');
-    if (existing) existing.remove();
-    const div = document.createElement('div');
-    div.className = 'verify-report plagiarism-report';
-    div.innerHTML = data.error
+    updateSidebarContent(data.error
       ? `<p class="error-msg">${escapeHtml(data.error)}</p>`
-      : `<h3>原创性分析报告</h3><div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">AI 辅助查重，结果仅供参考</div>${marked.parse(data.content)}`;
-    resultContent.appendChild(div);
-    div.scrollIntoView({ behavior: 'smooth' });
-  } catch (e) { showToast('查重分析失败'); }
+      : `<div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">AI 辅助查重，结果仅供参考</div>${marked.parse(data.content)}`);
+  } catch (e) { updateSidebarContent('<p class="error-msg">查重分析失败</p>'); }
   finally { btn.innerHTML = '🔍 AI 查重'; btn.disabled = false; }
 }
 
@@ -2382,6 +2443,7 @@ async function runReferenceCheck() {
   const text = resultContent ? resultContent.innerText : '';
   if (!text.trim()) { showToast('没有可验证的内容'); return; }
 
+  showSidebar('引用验证');
   btn.innerHTML = '⏳ 验证中...'; btn.disabled = true;
   try {
     const res = await fetch('/api/verify-references', {
@@ -2389,14 +2451,10 @@ async function runReferenceCheck() {
       body: JSON.stringify({ content: text }),
     });
     const data = await res.json();
-    let existing = resultContent.querySelector('.verify-report');
-    if (existing) existing.remove();
-    const div = document.createElement('div');
-    div.className = 'verify-report';
     if (data.error) {
-      div.innerHTML = `<p class="error-msg">${escapeHtml(data.error)}</p>`;
+      updateSidebarContent(`<p class="error-msg">${escapeHtml(data.error)}</p>`);
     } else {
-      div.innerHTML = `<h3>引用验证报告</h3>
+      updateSidebarContent(`<h3>引用验证报告</h3>
         <div class="verify-summary">
           <span class="verify-stat verified">✓ ${data.verified} 条已验证</span>
           <span class="verify-stat fake">✗ ${data.fake} 条未找到</span>
@@ -2406,11 +2464,9 @@ async function runReferenceCheck() {
             <div class="verify-ref-status">${r.status === 'verified' ? '✓ 已验证' : '✗ 未找到匹配'}</div>
             <div class="verify-ref-original"><strong>原文:</strong> ${escapeHtml(r.original).slice(0, 150)}</div>
             ${r.status === 'verified' ? `<div class="verify-ref-match"><strong>匹配:</strong> ${escapeHtml(r.match_title)}</div>` : '<div class="verify-ref-match"><strong>建议:</strong> 此引用可能为 AI 生成，请手动检索真实文献替换</div>'}
-          </div>`).join('')}`;
+          </div>`).join('')}`);
     }
-    resultContent.appendChild(div);
-    div.scrollIntoView({ behavior: 'smooth' });
-  } catch (e) { showToast('引用验证失败'); }
+  } catch (e) { updateSidebarContent('<p class="error-msg">引用验证失败</p>'); }
   finally { btn.innerHTML = '📚 验证引用'; btn.disabled = false; }
 }
 
@@ -2420,6 +2476,7 @@ async function runMathCheck() {
   const text = resultContent ? resultContent.innerText : '';
   if (!text.trim()) { showToast('没有可验证的内容'); return; }
 
+  showSidebar('数学推导验证');
   btn.innerHTML = '⏳ 验证中...'; btn.disabled = true;
   try {
     const res = await fetch('/api/verify-math', {
@@ -2427,16 +2484,10 @@ async function runMathCheck() {
       body: JSON.stringify({ content: text }),
     });
     const data = await res.json();
-    let existing = resultContent.querySelector('.math-verify-report');
-    if (existing) existing.remove();
-    const div = document.createElement('div');
-    div.className = 'verify-report math-verify-report';
-    div.innerHTML = data.error
+    updateSidebarContent(data.error
       ? `<p class="error-msg">${escapeHtml(data.error)}</p>`
-      : `<h3>数学推导验证报告</h3><div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">独立复核结果，请逐项核实</div>${marked.parse(data.content)}`;
-    resultContent.appendChild(div);
-    div.scrollIntoView({ behavior: 'smooth' });
-  } catch (e) { showToast('数学验证失败'); }
+      : `<h3>数学推导验证报告</h3><div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">独立复核结果，请逐项核实</div>${marked.parse(data.content)}`);
+  } catch (e) { updateSidebarContent('<p class="error-msg">数学验证失败</p>'); }
   finally { btn.innerHTML = '📐 验证推导'; btn.disabled = false; }
 }
 
@@ -2453,6 +2504,7 @@ async function runAbstractRefine() {
   const absMatch = text.match(/(?:Abstract|摘要|Summary)[\s\S]{0,3000}/i);
   const abstract = absMatch ? absMatch[0].slice(0, 3000) : text.slice(0, 3000);
 
+  showSidebar('摘要精修');
   btn.innerHTML = '⏳ 分析中...'; btn.disabled = true;
   try {
     const contestType = document.getElementById('paper-contest-type')?.value || 'MCM/ICM';
@@ -2461,16 +2513,10 @@ async function runAbstractRefine() {
       body: JSON.stringify({ abstract, contest_type: contestType }),
     });
     const data = await res.json();
-    let existing = resultContent.querySelector('.abstract-refine-report');
-    if (existing) existing.remove();
-    const div = document.createElement('div');
-    div.className = 'verify-report abstract-refine-report';
-    div.innerHTML = data.error
+    updateSidebarContent(data.error
       ? `<p class="error-msg">${escapeHtml(data.error)}</p>`
-      : `<h3>摘要精修报告</h3><div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">按 COMAP 标准逐条审查</div>${marked.parse(data.content)}`;
-    resultContent.appendChild(div);
-    div.scrollIntoView({ behavior: 'smooth' });
-  } catch (e) { showToast('摘要分析失败'); }
+      : `<h3>摘要精修报告</h3><div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">按 COMAP 标准逐条审查</div>${marked.parse(data.content)}`);
+  } catch (e) { updateSidebarContent('<p class="error-msg">摘要分析失败</p>'); }
   finally { btn.innerHTML = '📝 摘要精修'; btn.disabled = false; }
 }
 
@@ -2483,13 +2529,11 @@ async function runSensitivityAnalysis() {
   const text = resultContent ? resultContent.innerText : '';
   if (!text.trim()) { showToast('没有可分析的内容'); return; }
 
-  // Extract model description section from paper
   const modelMatch = text.match(/(?:Model\s+Development|模型建立|Mathematical\s+Formulation|数学模型)[\s\S]{0,3000}/i);
   const modelDesc = modelMatch ? modelMatch[0].slice(0, 3000) : text.slice(0, 2000);
-
-  // Get problem from the paper form
   const problem = document.getElementById('paper-problem')?.value.trim() || 'the mathematical modeling problem';
 
+  showSidebar('敏感性分析代码');
   btn.innerHTML = '⏳ 生成代码中...'; btn.disabled = true;
   try {
     const contestType = document.getElementById('paper-contest-type')?.value || 'MCM/ICM';
@@ -2498,17 +2542,13 @@ async function runSensitivityAnalysis() {
       body: JSON.stringify({ problem, model_description: modelDesc, contest_type: contestType }),
     });
     const data = await res.json();
-    let existing = resultContent.querySelector('.sensitivity-report');
-    if (existing) existing.remove();
-    const div = document.createElement('div');
-    div.className = 'verify-report sensitivity-report';
-    div.innerHTML = data.error
+    let html = data.error
       ? `<p class="error-msg">${escapeHtml(data.error)}</p>`
       : `<h3>敏感性分析代码</h3><div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">自动生成的敏感性分析 Python 代码</div>${marked.parse(data.content)}`;
-    resultContent.appendChild(div);
-    injectCodeCopyButtons(div);
-    div.scrollIntoView({ behavior: 'smooth' });
-  } catch (e) { showToast('敏感性分析生成失败'); }
+    updateSidebarContent(html);
+    // Add copy buttons for code blocks in sidebar
+    setTimeout(() => injectCodeCopyButtons(document.getElementById('sidebar-body')), 100);
+  } catch (e) { updateSidebarContent('<p class="error-msg">敏感性分析生成失败</p>'); }
   finally { btn.innerHTML = '📊 敏感性分析'; btn.disabled = false; }
 }
 
@@ -2521,6 +2561,7 @@ async function runPaperScore() {
   const text = resultContent ? resultContent.innerText : '';
   if (!text.trim()) { showToast('没有可评分的论文内容'); return; }
 
+  showSidebar('论文评审报告');
   btn.innerHTML = '⏳ 评分中...'; btn.disabled = true;
   try {
     const contestType = document.getElementById('paper-contest-type')?.value || 'MCM/ICM';
@@ -2529,16 +2570,10 @@ async function runPaperScore() {
       body: JSON.stringify({ content: text, contest_type: contestType }),
     });
     const data = await res.json();
-    let existing = resultContent.querySelector('.paper-score-report');
-    if (existing) existing.remove();
-    const div = document.createElement('div');
-    div.className = 'verify-report paper-score-report';
-    div.innerHTML = data.error
+    updateSidebarContent(data.error
       ? `<p class="error-msg">${escapeHtml(data.error)}</p>`
-      : `<h3>论文评审报告</h3><div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">按 COMAP 标准评分 (创新40% + 表达30% + 建模30%)</div>${marked.parse(data.content)}`;
-    resultContent.appendChild(div);
-    div.scrollIntoView({ behavior: 'smooth' });
-  } catch (e) { showToast('论文评分失败'); }
+      : `<h3>论文评审报告</h3><div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">按 COMAP 标准评分 (创新40% + 表达30% + 建模30%)</div>${marked.parse(data.content)}`);
+  } catch (e) { updateSidebarContent('<p class="error-msg">论文评分失败</p>'); }
   finally { btn.innerHTML = '🎯 论文评分'; btn.disabled = false; }
 }
 
@@ -2551,6 +2586,7 @@ async function runFigureSuggest() {
   const text = resultContent ? resultContent.innerText : '';
   if (!text.trim()) { showToast('没有可分析的论文内容'); return; }
 
+  showSidebar('图表建议');
   btn.innerHTML = '⏳ 分析中...'; btn.disabled = true;
   try {
     const contestType = document.getElementById('paper-contest-type')?.value || 'MCM/ICM';
@@ -2559,17 +2595,12 @@ async function runFigureSuggest() {
       body: JSON.stringify({ content: text, contest_type: contestType }),
     });
     const data = await res.json();
-    let existing = resultContent.querySelector('.figure-suggest-report');
-    if (existing) existing.remove();
-    const div = document.createElement('div');
-    div.className = 'verify-report figure-suggest-report';
-    div.innerHTML = data.error
+    let html = data.error
       ? `<p class="error-msg">${escapeHtml(data.error)}</p>`
       : `<h3>图表建议与代码</h3><div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">论文各章节推荐图表及其 matplotlib 代码</div>${marked.parse(data.content)}`;
-    resultContent.appendChild(div);
-    injectCodeCopyButtons(div);
-    div.scrollIntoView({ behavior: 'smooth' });
-  } catch (e) { showToast('图表建议生成失败'); }
+    updateSidebarContent(html);
+    setTimeout(() => injectCodeCopyButtons(document.getElementById('sidebar-body')), 100);
+  } catch (e) { updateSidebarContent('<p class="error-msg">图表建议生成失败</p>'); }
   finally { btn.innerHTML = '📈 图表建议'; btn.disabled = false; }
 }
 
@@ -2582,6 +2613,7 @@ async function runMockReview() {
   const content = resultContent ? resultContent.innerText : '';
   if (!content.trim()) { showToast('没有可评审的内容'); return; }
 
+  showSidebar('模拟评审');
   btn.innerHTML = '⏳ 评审中...'; btn.disabled = true;
   try {
     const res = await fetch('/api/mock-review', {
@@ -2589,14 +2621,8 @@ async function runMockReview() {
       body: JSON.stringify({ content }),
     });
     const data = await res.json();
-    let existing = resultContent.querySelector('.review-report');
-    if (existing) existing.remove();
-    const div = document.createElement('div');
-    div.className = 'review-report';
-    div.innerHTML = data.error ? `<p class="error-msg">${escapeHtml(data.error)}</p>` : marked.parse(data.content);
-    resultContent.appendChild(div);
-    div.scrollIntoView({ behavior: 'smooth' });
-  } catch (e) { showToast('模拟评审失败'); }
+    updateSidebarContent(data.error ? `<p class="error-msg">${escapeHtml(data.error)}</p>` : marked.parse(data.content));
+  } catch (e) { updateSidebarContent('<p class="error-msg">模拟评审失败</p>'); }
   finally { btn.innerHTML = '🏅 模拟评审'; btn.disabled = false; }
 }
 
@@ -2609,13 +2635,13 @@ async function runPaperCompare() {
   const text = resultContent ? resultContent.innerText : '';
   if (!text.trim()) { showToast('没有可对比的论文内容'); return; }
 
-  // Get previous version from paper history
   const history = getPaperHistory();
   if (history.length === 0) {
     showToast('没有历史版本可对比。请先生成一篇论文，修改后再生成一篇来进行对比。');
     return;
   }
 
+  showSidebar('论文对比');
   btn.innerHTML = '⏳ 对比中...'; btn.disabled = true;
   try {
     const contestType = document.getElementById('paper-contest-type')?.value || 'MCM/ICM';
@@ -2624,16 +2650,10 @@ async function runPaperCompare() {
       body: JSON.stringify({ content_a: history[0].content.slice(0, 4000), content_b: text.slice(0, 4000), contest_type: contestType }),
     });
     const data = await res.json();
-    let existing = resultContent.querySelector('.paper-compare-report');
-    if (existing) existing.remove();
-    const div = document.createElement('div');
-    div.className = 'verify-report paper-compare-report';
-    div.innerHTML = data.error
+    updateSidebarContent(data.error
       ? `<p class="error-msg">${escapeHtml(data.error)}</p>`
-      : `<h3>论文对比报告</h3><div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">当前版本 vs 上一版 (${escapeHtml(history[0].problem).slice(0, 60)}...)</div>${marked.parse(data.content)}`;
-    resultContent.appendChild(div);
-    div.scrollIntoView({ behavior: 'smooth' });
-  } catch (e) { showToast('论文对比失败'); }
+      : `<h3>论文对比报告</h3><div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">当前版本 vs 上一版 (${escapeHtml(history[0].problem).slice(0, 60)}...)</div>${marked.parse(data.content)}`);
+  } catch (e) { updateSidebarContent('<p class="error-msg">论文对比失败</p>'); }
   finally { btn.innerHTML = '🔄 对比论文'; btn.disabled = false; }
 }
 
