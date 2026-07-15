@@ -12,6 +12,7 @@ from src.prompts import (
     SYSTEM_PAPER_COMPARE, PAPER_COMPARE_PROMPT,
     SYSTEM_PAPER_ANALYZE, PAPER_ANALYZE_PROMPT,
     SYSTEM_MOCK_REVIEW, MOCK_REVIEW_PROMPT,
+    SYSTEM_DEDUP,
 )
 from datetime import date
 from src.llm_client import generate_response, generate_stream
@@ -556,6 +557,37 @@ Provide a section-by-section originality assessment with specific flagged passag
         return jsonify({"content": result})
     except Exception as e:
         return jsonify({"error": f"查重分析失败: {str(e)}"}), 500
+
+
+# ===== API: AI Deduplication / Paraphrasing =====
+
+@app.route("/api/deduplicate", methods=["POST"])
+def deduplicate():
+    data = request.get_json()
+    passages = data.get("passages", "").strip()
+    contest_type = data.get("contest_type", "MCM/ICM")
+
+    if not passages:
+        return jsonify({"error": "请提供需要降重的文本段落"}), 400
+
+    if len(passages) < 50:
+        return jsonify({"error": "文本过短，至少需要 50 字"}), 400
+
+    lang = "Chinese" if contest_type == "CUMCM" else "English"
+    user_prompt = f"""Please rewrite the following passage from a mathematical modeling paper to reduce plagiarism risk.
+
+Target language: {lang}
+
+Original passage:
+{passages[:4000]}
+
+Please provide the rewritten version that says the same thing differently."""
+
+    try:
+        result = generate_response(SYSTEM_DEDUP, user_prompt, max_tokens=2500)
+        return jsonify({"content": result})
+    except Exception as e:
+        return jsonify({"error": f"降重改写失败: {str(e)}"}), 500
 
 
 # ===== API: Abstract Refinement =====

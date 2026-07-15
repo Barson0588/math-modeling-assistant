@@ -2436,11 +2436,116 @@ async function runPlagiarismCheck() {
       body: JSON.stringify({ content: text }),
     });
     const data = await res.json();
-    updateSidebarContent(data.error
-      ? `<p class="error-msg">${escapeHtml(data.error)}</p>`
-      : `<div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">AI 辅助查重，结果仅供参考</div>${marked.parse(data.content)}`);
+    if (data.error) {
+      updateSidebarContent(`<p class="error-msg">${escapeHtml(data.error)}</p>`);
+    } else {
+      const dedupHtml = `
+        <div class="dedup-action-bar">
+          <button class="btn-sm dedup-btn" id="dedup-full-btn" onclick="runDedup('full')">全文降重改写</button>
+          <button class="btn-sm dedup-btn" id="dedup-flagged-btn" onclick="runDedup('flagged')">仅改写高风险段落</button>
+          <span class="dedup-hint">AI 去重 — 保留公式、数据，仅重述语言</span>
+        </div>
+        <div class="dedup-result" id="dedup-result" hidden></div>`;
+      updateSidebarContent(`<div class="plagiarism-report-wrapper">${dedupHtml}<div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">AI 辅助查重，结果仅供参考</div>${marked.parse(data.content)}</div>`);
+      // Store content for dedup use
+      document.getElementById('sidebar-body').dataset.originalContent = text;
+      document.getElementById('sidebar-body').dataset.plagiarismReport = data.content;
+    }
   } catch (e) { updateSidebarContent('<p class="error-msg">查重分析失败</p>'); }
   finally { btn.innerHTML = '🔍 AI 查重'; btn.disabled = false; }
+}
+
+async function runDedup(mode) {
+  const sidebarBody = document.getElementById('sidebar-body');
+  const fullText = sidebarBody.dataset.originalContent || '';
+  if (!fullText.trim()) { showToast('没有可降重的文本'); return; }
+
+  const dedupResult = document.getElementById('dedup-result');
+  const fullBtn = document.getElementById('dedup-full-btn');
+  const flaggedBtn = document.getElementById('dedup-flagged-btn');
+
+  // Build text to rewrite
+  let textToRewrite;
+  if (mode === 'flagged') {
+    const report = sidebarBody.dataset.plagiarismReport || '';
+    // Extract quoted passages from the plagiarism report
+    const quoted = report.match(/["""]([^"」""]{40,})["」""]/g);
+    if (quoted && quoted.length > 0) {
+      textToRewrite = quoted.map(q => q.replace(/["「""」]/g, '')).join('\n\n---\n\n');
+    } else {
+      textToRewrite = fullText.slice(0, 4000);
+    }
+  } else {
+    textToRewrite = fullText.slice(0, 4000);
+  }
+
+  if (!textToRewrite.trim()) { showToast('没有可降重的文本段落'); return; }
+
+  if (fullBtn) { fullBtn.disabled = true; fullBtn.textContent = '改写中...'; }
+  if (flaggedBtn) { flaggedBtn.disabled = true; flaggedBtn.textContent = '改写中...'; }
+  dedupResult.hidden = false;
+  dedupResult.innerHTML = '<div class="result-sidebar-loading"><div class="spinner"></div><span>AI 正在改写，保留公式和数据...</span></div>';
+  dedupResult.scrollIntoView({ behavior: 'smooth' });
+
+  try {
+    const contestType = document.getElementById('paper-contest-type')?.value || 'MCM/ICM';
+    const res = await fetch('/api/deduplicate', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ passages: textToRewrite, contest_type: contestType }),
+    });
+    const data = await res.json();
+    if (data.error) {
+      dedupResult.innerHTML = `<p class="error-msg">${escapeHtml(data.error)}</p>`;
+    } else {
+      dedupResult.innerHTML = `
+        <h3>降重改写结果</h3>
+        <div class="dedup-actions">
+          <button class="btn-sm" onclick="copyDedupResult(this)">复制改写内容</button>
+          <button class="btn-sm" onclick="replaceWithDedup(this)">替换原文</button>
+        </div>
+        ${marked.parse(data.content)}`;
+    }
+  } catch (e) {
+    dedupResult.innerHTML = '<p class="error-msg">降重改写失败，请重试</p>';
+  } finally {
+    if (fullBtn) { fullBtn.disabled = false; fullBtn.textContent = '全文降重改写'; }
+    if (flaggedBtn) { flaggedBtn.disabled = false; flaggedBtn.textContent = '仅改写高风险段落'; }
+  }
+}
+
+function copyDedupResult(btn) {
+  const container = btn.closest('.dedup-result');
+  const text = container ? container.innerText : '';
+  navigator.clipboard.writeText(text).then(() => {
+    btn.textContent = '已复制';
+    setTimeout(() => btn.textContent = '复制改写内容', 1500);
+  });
+}
+
+function replaceWithDedup(btn) {
+  const container = btn.closest('.dedup-result');
+  const dedupText = container ? container.innerText.replace(/复制改写内容|替换原文/g, '') : '';
+  if (!dedupText.trim()) { showToast('没有改写内容可替换'); return; }
+
+  const resultContent = getActiveContent();
+  if (!resultContent) return;
+
+  if (editModeActive) {
+    const textarea = document.getElementById('edit-textarea');
+    if (textarea) {
+      textarea.value = dedupText;
+      showToast('已替换编辑区内容');
+    }
+  } else {
+    resultContent.innerHTML = marked.parse(dedupText);
+    injectCodeCopyButtons(resultContent);
+    injectDisclaimer(resultContent);
+    injectVerificationChecklist(resultContent);
+    injectExplainButtons(resultContent);
+    buildTOC(resultContent);
+    injectDataSourceHighlights(resultContent);
+    showToast('已替换原文，可点击编辑论文继续修改');
+  }
 }
 
 async function runReferenceCheck() {

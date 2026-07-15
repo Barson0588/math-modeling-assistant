@@ -1801,6 +1801,44 @@ footer { text-align: center; padding: 24px; color: var(--text-secondary); font-s
 @keyframes spin { to { transform: rotate(360deg); } }
 
 /* Edit mode indicator */
+/* Dedup action bar inside plagiarism sidebar */
+.dedup-action-bar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  padding: 12px 14px; background: var(--accent-light);
+  border: 1px dashed var(--accent); border-radius: 8px;
+  margin-bottom: 16px;
+}
+.dedup-action-bar .dedup-btn {
+  padding: 6px 14px; background: var(--accent); color: #fff;
+  border: none; border-radius: 6px; font-size: 13px; font-weight: 600;
+  cursor: pointer; transition: all .2s;
+}
+.dedup-action-bar .dedup-btn:hover { background: var(--accent-hover); }
+.dedup-action-bar .dedup-btn:disabled { opacity: .6; cursor: not-allowed; }
+.dedup-action-bar .dedup-hint {
+  font-size: 11px; color: var(--text-secondary);
+  width: 100%; margin-top: 2px;
+}
+.dedup-result {
+  margin-top: 16px; padding: 14px; background: #f0fdf4;
+  border: 1px solid #86efac; border-radius: 8px;
+}
+[data-theme="dark"] .dedup-result { background: #0f2f24; border-color: #22c55e; }
+.dedup-result h3 {
+  font-size: 15px; font-weight: 700; margin: 0 0 8px;
+}
+.dedup-actions {
+  display: flex; gap: 8px; margin-bottom: 12px;
+}
+.dedup-actions .btn-sm {
+  padding: 4px 12px; font-size: 12px; background: #22c55e; color: #fff;
+  border: none; border-radius: 4px; cursor: pointer;
+}
+.dedup-actions .btn-sm:hover { background: #16a34a; }
+.dedup-actions .btn-sm:last-child { background: var(--accent); }
+.dedup-actions .btn-sm:last-child:hover { background: var(--accent-hover); }
+.dedup-result .code-block-wrapper { margin: 12px 0; }
+
 .edit-mode-indicator {
   position: sticky; top: 8px; z-index: 10;
   display: flex; align-items: center; gap: 12px;
