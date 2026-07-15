@@ -2455,53 +2455,56 @@ async function runPlagiarismCheck() {
   finally { btn.innerHTML = '🔍 AI 查重'; btn.disabled = false; }
 }
 
+// Track current dedup mode for smart replace
+let _dedupMode = 'full';
+
 async function runDedup(mode) {
   const sidebarBody = document.getElementById('sidebar-body');
   const fullText = sidebarBody.dataset.originalContent || '';
   if (!fullText.trim()) { showToast('没有可降重的文本'); return; }
 
+  _dedupMode = mode;
   const dedupResult = document.getElementById('dedup-result');
   const fullBtn = document.getElementById('dedup-full-btn');
   const flaggedBtn = document.getElementById('dedup-flagged-btn');
 
-  // Build text to rewrite
-  let textToRewrite;
+  let requestBody;
   if (mode === 'flagged') {
     const report = sidebarBody.dataset.plagiarismReport || '';
-    // Extract quoted passages from the plagiarism report
     const quoted = report.match(/["""]([^"」""]{40,})["」""]/g);
-    if (quoted && quoted.length > 0) {
-      textToRewrite = quoted.map(q => q.replace(/["「""」]/g, '')).join('\n\n---\n\n');
-    } else {
-      textToRewrite = fullText.slice(0, 4000);
-    }
+    const flaggedText = quoted && quoted.length > 0
+      ? quoted.map(q => q.replace(/["「""」]/g, '')).join('\n\n---\n\n')
+      : '';
+    if (!flaggedText) { showToast('未从查重报告中提取到高风险段落，请使用全文降重'); return; }
+    requestBody = { mode: 'targeted', full_content: fullText, passages: flaggedText, contest_type: document.getElementById('paper-contest-type')?.value || 'MCM/ICM' };
   } else {
-    textToRewrite = fullText.slice(0, 4000);
+    requestBody = { mode: 'full', passages: fullText, contest_type: document.getElementById('paper-contest-type')?.value || 'MCM/ICM' };
   }
-
-  if (!textToRewrite.trim()) { showToast('没有可降重的文本段落'); return; }
 
   if (fullBtn) { fullBtn.disabled = true; fullBtn.textContent = '改写中...'; }
   if (flaggedBtn) { flaggedBtn.disabled = true; flaggedBtn.textContent = '改写中...'; }
   dedupResult.hidden = false;
-  dedupResult.innerHTML = '<div class="result-sidebar-loading"><div class="spinner"></div><span>AI 正在改写，保留公式和数据...</span></div>';
+  dedupResult.innerHTML = '<div class="result-sidebar-loading"><div class="spinner"></div><span>' + (mode === 'flagged' ? 'AI 正在针对性改写高风险段落，其余内容保持不变...' : 'AI 正在改写全文，保留公式和数据...') + '</span></div>';
   dedupResult.scrollIntoView({ behavior: 'smooth' });
 
   try {
-    const contestType = document.getElementById('paper-contest-type')?.value || 'MCM/ICM';
     const res = await fetch('/api/deduplicate', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ passages: textToRewrite, contest_type: contestType }),
+      body: JSON.stringify(requestBody),
     });
     const data = await res.json();
     if (data.error) {
       dedupResult.innerHTML = `<p class="error-msg">${escapeHtml(data.error)}</p>`;
     } else {
+      // Store the rewritten full content for replace
+      dedupResult.dataset.rewrittenContent = data.content;
+      const label = mode === 'flagged' ? '针对性降重结果（仅高风险段落已改写，其余保持原文）' : '全文降重结果';
       dedupResult.innerHTML = `
-        <h3>降重改写结果</h3>
+        <h3>${label}</h3>
         <div class="dedup-actions">
           <button class="btn-sm" onclick="copyDedupResult(this)">复制改写内容</button>
-          <button class="btn-sm" onclick="replaceWithDedup(this)">替换原文</button>
+          <button class="btn-sm" onclick="replaceWithDedup(this)">${mode === 'flagged' ? '应用修改到原文' : '替换原文'}</button>
+          ${mode === 'flagged' ? '<span style="font-size:11px;color:var(--text-secondary);margin-left:4px">仅替换高风险段落，其余内容不变</span>' : ''}
         </div>
         ${marked.parse(data.content)}`;
     }
@@ -2514,8 +2517,8 @@ async function runDedup(mode) {
 }
 
 function copyDedupResult(btn) {
-  const container = btn.closest('.dedup-result');
-  const text = container ? container.innerText : '';
+  const container = document.getElementById('dedup-result');
+  const text = container ? container.dataset.rewrittenContent || container.innerText : '';
   navigator.clipboard.writeText(text).then(() => {
     btn.textContent = '已复制';
     setTimeout(() => btn.textContent = '复制改写内容', 1500);
@@ -2523,9 +2526,11 @@ function copyDedupResult(btn) {
 }
 
 function replaceWithDedup(btn) {
-  const container = btn.closest('.dedup-result');
-  const dedupText = container ? container.innerText.replace(/复制改写内容|替换原文/g, '') : '';
-  if (!dedupText.trim()) { showToast('没有改写内容可替换'); return; }
+  const dedupResult = document.getElementById('dedup-result');
+  const rewrittenContent = dedupResult ? dedupResult.dataset.rewrittenContent : '';
+  if (!rewrittenContent || !rewrittenContent.trim()) {
+    showToast('没有改写内容可替换'); return;
+  }
 
   const resultContent = getActiveContent();
   if (!resultContent) return;
@@ -2533,18 +2538,21 @@ function replaceWithDedup(btn) {
   if (editModeActive) {
     const textarea = document.getElementById('edit-textarea');
     if (textarea) {
-      textarea.value = dedupText;
-      showToast('已替换编辑区内容');
+      textarea.value = rewrittenContent;
+      showToast(_dedupMode === 'flagged' ? '已应用针对性修改到编辑区' : '已替换编辑区内容');
     }
   } else {
-    resultContent.innerHTML = marked.parse(dedupText);
+    resultContent.innerHTML = marked.parse(rewrittenContent);
     injectCodeCopyButtons(resultContent);
     injectDisclaimer(resultContent);
     injectVerificationChecklist(resultContent);
     injectExplainButtons(resultContent);
     buildTOC(resultContent);
     injectDataSourceHighlights(resultContent);
-    showToast('已替换原文，可点击编辑论文继续修改');
+    const msg = _dedupMode === 'flagged'
+      ? '已应用修改 — 仅高风险段落被改写，其余内容保持原文'
+      : '已替换为全文降重版本';
+    showToast(msg);
   }
 }
 

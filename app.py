@@ -565,27 +565,56 @@ Provide a section-by-section originality assessment with specific flagged passag
 def deduplicate():
     data = request.get_json()
     passages = data.get("passages", "").strip()
+    full_content = data.get("full_content", "").strip()
+    mode = data.get("mode", "full")  # "full" or "targeted"
     contest_type = data.get("contest_type", "MCM/ICM")
 
-    if not passages:
-        return jsonify({"error": "请提供需要降重的文本段落"}), 400
+    if mode == "targeted":
+        if not full_content:
+            return jsonify({"error": "请提供完整论文内容"}), 400
+        if not passages:
+            return jsonify({"error": "请提供需要降重的文本段落"}), 400
+        if len(passages) < 50:
+            return jsonify({"error": "文本过短，至少需要 50 字"}), 400
 
-    if len(passages) < 50:
-        return jsonify({"error": "文本过短，至少需要 50 字"}), 400
-
-    lang = "Chinese" if contest_type == "CUMCM" else "English"
-    user_prompt = f"""Please rewrite the following passage from a mathematical modeling paper to reduce plagiarism risk.
+        lang = "Chinese" if contest_type == "CUMCM" else "English"
+        user_prompt = f"""I have a mathematical modeling paper that needs targeted plagiarism reduction.
 
 Target language: {lang}
 
-Original passage:
-{passages[:4000]}
+=== FULL PAPER (KEEP INTACT except for flagged sections below) ===
+{full_content[:6000]}
 
-Please provide the rewritten version that says the same thing differently."""
+=== FLAGGED PASSAGES TO REWRITE ===
+{passages[:3000]}
+
+IMPORTANT INSTRUCTIONS:
+1. Return the COMPLETE paper with ALL sections intact
+2. ONLY rewrite the flagged passages — keep everything else WORD-FOR-WORD identical
+3. For each flagged passage, restructure sentences, use different vocabulary, vary academic phrasing
+4. Keep ALL mathematical formulas, LaTeX expressions, data values, and technical conclusions exactly as they are
+5. The output should be the full paper, ready to use as-is
+
+Return the complete rewritten paper."""
+    else:
+        if not passages:
+            return jsonify({"error": "请提供需要降重的文本段落"}), 400
+        if len(passages) < 50:
+            return jsonify({"error": "文本过短，至少需要 50 字"}), 400
+
+        lang = "Chinese" if contest_type == "CUMCM" else "English"
+        user_prompt = f"""Please rewrite the following mathematical modeling paper to reduce plagiarism risk.
+
+Target language: {lang}
+
+Original paper:
+{passages[:5000]}
+
+Please provide the complete rewritten paper that says the same thing differently."""
 
     try:
-        result = generate_response(SYSTEM_DEDUP, user_prompt, max_tokens=2500)
-        return jsonify({"content": result})
+        result = generate_response(SYSTEM_DEDUP, user_prompt, max_tokens=3000)
+        return jsonify({"content": result, "mode": mode})
     except Exception as e:
         return jsonify({"error": f"降重改写失败: {str(e)}"}), 500
 
