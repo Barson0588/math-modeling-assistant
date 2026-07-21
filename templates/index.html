@@ -28,6 +28,30 @@
   </div>
 </nav>
 
+<!-- Mobile Bottom Tab Bar -->
+<nav class="bottom-nav" id="bottom-nav">
+  <button class="bottom-nav-btn active" data-tab="generator">
+    <span class="bottom-nav-icon">&#9881;</span>
+    <span class="bottom-nav-label">生成</span>
+  </button>
+  <button class="bottom-nav-btn" data-tab="paper">
+    <span class="bottom-nav-icon">&#128196;</span>
+    <span class="bottom-nav-label">论文</span>
+  </button>
+  <button class="bottom-nav-btn" data-tab="models">
+    <span class="bottom-nav-icon">&#128214;</span>
+    <span class="bottom-nav-label">模型</span>
+  </button>
+  <button class="bottom-nav-btn" data-tab="problems">
+    <span class="bottom-nav-icon">&#128213;</span>
+    <span class="bottom-nav-label">真题</span>
+  </button>
+  <button class="bottom-nav-btn" data-tab="guide">
+    <span class="bottom-nav-icon">&#128203;</span>
+    <span class="bottom-nav-label">指南</span>
+  </button>
+</nav>
+
 <main>
 
 <!-- ============ TAB 1: Paper Generator ============ -->
@@ -167,6 +191,8 @@
     </div>
     <div class="paper-preview-wrapper">
       <div id="paper-content" class="paper-page markdown-body"></div>
+<button id="toc-dropdown-btn" class="toc-dropdown-btn" hidden>&#9776; 目录</button>
+<div id="toc-dropdown" class="toc-dropdown" hidden></div>
     </div>
   </div>
 

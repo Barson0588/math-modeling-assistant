@@ -227,6 +227,10 @@ document.querySelectorAll('.nav-btn').forEach(btn => {
     const tabName = btn.dataset.tab;
     document.getElementById('tab-' + tabName).classList.add('active');
 
+    // Sync bottom nav
+    const bottomBtns = document.querySelectorAll('.bottom-nav-btn');
+    bottomBtns.forEach(b => b.classList.toggle('active', b.dataset.tab === tabName));
+
     if (!loadedTabs[tabName]) {
       loadedTabs[tabName] = true;
       switch (tabName) {
@@ -250,6 +254,16 @@ document.querySelectorAll('.nav-btn').forEach(btn => {
       if (tabName === 'models' && modelsReady) renderModelGrid(allModels);
       if (tabName === 'problems' && problemsReady) renderProblemListWithBookmarks(allProblems);
     }
+  });
+});
+
+// Bottom nav tab switching
+document.querySelectorAll('.bottom-nav-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const tabName = btn.dataset.tab;
+    // Trigger the corresponding top nav button click
+    const topBtn = document.querySelector(`.nav-btn[data-tab="${tabName}"]`);
+    if (topBtn) topBtn.click();
   });
 });
 
@@ -562,6 +576,8 @@ function useProblem(contest, type, category, description, requirements) {
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   document.querySelector('[data-tab="generator"]').classList.add('active');
   document.getElementById('tab-generator').classList.add('active');
+  // Sync bottom nav
+  document.querySelectorAll('.bottom-nav-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === 'generator'));
   document.getElementById('tab-generator').scrollIntoView({ behavior: 'smooth' });
   showToast('题目已填入，可开始生成');
 }
@@ -1673,6 +1689,17 @@ function buildTOC(container) {
 
   document.body.appendChild(toc);
 
+  // Populate mobile TOC dropdown
+  const tocDropdown = document.getElementById('toc-dropdown');
+  const tocBtn = document.getElementById('toc-dropdown-btn');
+  if (tocDropdown && tocBtn && window.innerWidth <= 768) {
+    tocDropdown.innerHTML = toc.innerHTML;
+    tocBtn.hidden = false;
+    tocBtn.addEventListener('click', () => {
+      tocDropdown.hidden = !tocDropdown.hidden;
+    });
+  }
+
   // Scroll spy
   tocObserver = new IntersectionObserver(entries => {
     entries.forEach(entry => {
@@ -2293,6 +2320,8 @@ function sendToPaper(index) {
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   document.querySelector('[data-tab="paper"]').classList.add('active');
   document.getElementById('tab-paper').classList.add('active');
+  // Sync bottom nav
+  document.querySelectorAll('.bottom-nav-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === 'paper'));
 
   // Scroll to paper tab and trigger generation
   document.getElementById('tab-paper').scrollIntoView({ behavior: 'smooth' });
