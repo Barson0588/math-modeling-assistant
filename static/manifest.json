@@ -1,10 +1,22 @@
 {
   "name": "Math Modeling Assistant",
   "short_name": "MMA",
-  "description": "MCM/ICM & CUMCM paper generator, model library, and competition guide",
+  "description": "数学建模竞赛备赛助手 — MCM/ICM & CUMCM",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#f8f9fb",
+  "scope": "/",
   "theme_color": "#2563eb",
-  "icons": []
+  "background_color": "#f8f9fb",
+  "icons": [
+    {
+      "src": "/static/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/static/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
 }

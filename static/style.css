@@ -1913,3 +1913,26 @@ footer { text-align: center; padding: 24px; color: var(--text-secondary); font-s
 [data-theme="dark"] .setup-card {
   border: 1px solid var(--border);
 }
+
+/* ============================================================
+   PWA Install Banner
+   ============================================================ */
+.pwa-install-banner {
+  position: fixed; bottom: 0; left: 0; right: 0;
+  background: var(--surface); border-top: 2px solid var(--accent);
+  padding: 12px 20px; display: flex; align-items: center;
+  gap: 10px; z-index: 95; font-size: 14px;
+  animation: slideUpBanner 0.3s ease;
+  box-shadow: 0 -4px 20px rgba(0,0,0,.1);
+}
+.pwa-install-banner span { flex: 1; color: var(--text); }
+@keyframes slideUpBanner {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+@media (max-width: 480px) {
+  .pwa-install-banner {
+    flex-wrap: wrap; padding: 10px 14px; font-size: 13px;
+  }
+  .pwa-install-banner span { width: 100%; }
+}

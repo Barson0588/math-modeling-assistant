@@ -3079,3 +3079,57 @@ document.addEventListener('keydown', function paperShortcut(e) {
     if (e.target === overlay) hideSetupModal();
   });
 })();
+
+// ============================================================
+// PWA Install Prompt
+// ============================================================
+(function setupPWAInstall() {
+  let deferredPrompt = null;
+
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredPrompt = e;
+    checkInstallBanner();
+  });
+
+  function checkInstallBanner() {
+    const count = parseInt(localStorage.getItem('mma-visit-count') || '0') + 1;
+    localStorage.setItem('mma-visit-count', count.toString());
+    if (count >= 3 && deferredPrompt && !document.querySelector('.pwa-install-banner')) {
+      showInstallBanner();
+    }
+  }
+
+  // Always increment visit count
+  const count = parseInt(localStorage.getItem('mma-visit-count') || '0') + 1;
+  localStorage.setItem('mma-visit-count', count.toString());
+
+  function showInstallBanner() {
+    const banner = document.createElement('div');
+    banner.className = 'pwa-install-banner';
+    const isIOS = /iphone|ipad|ipod/.test(navigator.userAgent.toLowerCase());
+    if (isIOS) {
+      banner.innerHTML = `
+        <span>将此应用添加到主屏幕：点击 <strong>分享</strong> → <strong>添加到主屏幕</strong></span>
+        <button class="btn-sm" onclick="this.parentElement.remove()">知道了</button>`;
+    } else {
+      banner.innerHTML = `
+        <span>将此应用添加到主屏幕以获得更好体验</span>
+        <button class="btn-sm pwa-install-btn">安装</button>
+        <button class="btn-sm" onclick="this.parentElement.remove()">关闭</button>`;
+    }
+    document.body.appendChild(banner);
+
+    const installBtn = banner.querySelector('.pwa-install-btn');
+    if (installBtn) {
+      installBtn.addEventListener('click', async () => {
+        if (deferredPrompt) {
+          deferredPrompt.prompt();
+          const result = await deferredPrompt.userChoice;
+          deferredPrompt = null;
+          banner.remove();
+        }
+      });
+    }
+  }
+})();
