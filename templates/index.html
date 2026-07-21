@@ -185,14 +185,12 @@
       <div class="result-actions">
         <button id="paper-copy-btn" class="btn-sm">复制全文</button>
         <button id="paper-pdf-btn" class="btn-sm">下载 PDF</button>
-        <button id="paper-docx-btn" class="btn-sm">下载 .docx</button>
+        <button id="paper-docx-btn" class="btn-sm">下载 .md</button>
         <button id="paper-tex-btn" class="btn-sm">下载 .tex</button>
       </div>
     </div>
     <div class="paper-preview-wrapper">
       <div id="paper-content" class="paper-page markdown-body"></div>
-<button id="toc-dropdown-btn" class="toc-dropdown-btn" hidden>&#9776; 目录</button>
-<div id="toc-dropdown" class="toc-dropdown" hidden></div>
     </div>
   </div>
 
@@ -358,6 +356,9 @@
   </div>
 </div>
 
+<button id="toc-dropdown-btn" class="toc-dropdown-btn" hidden>&#9776; 目录</button>
+<div id="toc-dropdown" class="toc-dropdown" hidden></div>
+
 </main>
 
 <footer>
@@ -366,7 +367,6 @@
 
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
-<script src="https://cdn.jsdelivr.net/pyodide/v0.25.0/full/pyodide.js"></script>
 <script src="/static/script.js"></script>
 <script>
 if ('serviceWorker' in navigator) {

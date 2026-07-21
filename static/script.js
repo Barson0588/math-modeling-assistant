@@ -231,6 +231,11 @@ document.querySelectorAll('.nav-btn').forEach(btn => {
     const bottomBtns = document.querySelectorAll('.bottom-nav-btn');
     bottomBtns.forEach(b => b.classList.toggle('active', b.dataset.tab === tabName));
 
+    // Clean up floating TOC when leaving generator/paper tabs
+    if (tabName !== 'generator' && tabName !== 'paper') {
+      cleanupTOC();
+    }
+
     if (!loadedTabs[tabName]) {
       loadedTabs[tabName] = true;
       switch (tabName) {
@@ -1671,11 +1676,19 @@ function escapeHtml(str) {
 // ============================================================
 let tocObserver = null;
 
+function cleanupTOC() {
+  const toc = document.querySelector('.toc-sidebar');
+  if (toc) toc.remove();
+  if (tocObserver) { tocObserver.disconnect(); tocObserver = null; }
+  const tocBtn = document.getElementById('toc-dropdown-btn');
+  const tocDropdown = document.getElementById('toc-dropdown');
+  if (tocBtn) tocBtn.hidden = true;
+  if (tocDropdown) { tocDropdown.hidden = true; tocDropdown.innerHTML = ''; }
+}
+
 function buildTOC(container) {
   // Remove old TOC
-  const old = document.querySelector('.toc-sidebar');
-  if (old) old.remove();
-  if (tocObserver) { tocObserver.disconnect(); tocObserver = null; }
+  cleanupTOC();
 
   const headings = container.querySelectorAll('h1, h2, h3');
   if (headings.length < 3) return;
@@ -1712,7 +1725,10 @@ function buildTOC(container) {
   if (tocDropdown && tocBtn && window.innerWidth <= 768) {
     tocDropdown.innerHTML = toc.innerHTML;
     tocBtn.hidden = false;
-    tocBtn.addEventListener('click', () => {
+    // Replace old click handler by cloning
+    const newBtn = tocBtn.cloneNode(true);
+    tocBtn.parentNode.replaceChild(newBtn, tocBtn);
+    newBtn.addEventListener('click', () => {
       tocDropdown.hidden = !tocDropdown.hidden;
     });
   }
@@ -1744,6 +1760,16 @@ async function getPyodide() {
 
   _pyodideLoadPromise = (async () => {
     _pyodideLoading = true;
+    // Lazy-load Pyodide script on first use
+    if (typeof loadPyodide === 'undefined') {
+      await new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = 'https://cdn.jsdelivr.net/pyodide/v0.25.0/full/pyodide.js';
+        script.onload = resolve;
+        script.onerror = () => reject(new Error('Pyodide 加载失败'));
+        document.head.appendChild(script);
+      });
+    }
     _pyodide = await loadPyodide({ indexURL: 'https://cdn.jsdelivr.net/pyodide/v0.25.0/full/' });
     await _pyodide.loadPackage(['numpy', 'micropip']);
     _pyodideLoading = false;
