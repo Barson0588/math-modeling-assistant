@@ -23,6 +23,7 @@
       <button class="nav-btn" data-tab="guide">Guide</button>
       <button class="nav-btn" data-tab="roles">Roles</button>
     </div>
+    <button id="settings-btn" class="nav-btn settings-btn" title="设置">&#9881;</button>
     <button id="theme-toggle" class="theme-btn" title="切换深色模式">🌙</button>
   </div>
 </nav>
@@ -308,6 +309,28 @@
     <div id="roles-content" class="markdown-body"></div>
   </div>
 </section>
+
+<!-- API Key Setup Modal -->
+<div id="setup-modal" class="overlay setup-overlay" hidden>
+  <div class="overlay-card setup-card">
+    <h2>配置 API Key</h2>
+    <p style="margin-bottom:16px;color:var(--text-secondary);font-size:14px">
+      请输入你的 DeepSeek API Key 以使用 AI 生成功能。
+      <a href="https://platform.deepseek.com/api_keys" target="_blank" rel="noopener">免费获取 Key →</a>
+    </p>
+    <div class="field">
+      <input type="password" id="setup-key-input" placeholder="sk-..." autocomplete="off">
+    </div>
+    <div id="setup-error" class="error-msg" hidden></div>
+    <div class="setup-actions">
+      <button id="setup-save-btn" class="btn-primary">
+        <span class="btn-text">保存并验证</span>
+        <span class="btn-loading" hidden><span class="spinner"></span>验证中...</span>
+      </button>
+      <button id="setup-skip-btn" class="btn-secondary">跳过（稍后配置）</button>
+    </div>
+  </div>
+</div>
 
 </main>
 

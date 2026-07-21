@@ -1,4 +1,109 @@
 // ============================================================
+// API Key Management
+// ============================================================
+const API_KEY_STORAGE = 'mma-api-key';
+
+function getApiKey() {
+  try { return localStorage.getItem(API_KEY_STORAGE) || ''; }
+  catch { return ''; }
+}
+
+function setApiKey(key) {
+  try { localStorage.setItem(API_KEY_STORAGE, key); }
+  catch {}
+}
+
+function hasApiKey() {
+  const key = getApiKey();
+  return key && key.startsWith('sk-');
+}
+
+function showSetupModal() {
+  const modal = document.getElementById('setup-modal');
+  if (!modal) return;
+  modal.hidden = false;
+  const input = document.getElementById('setup-key-input');
+  if (input) { input.value = getApiKey(); input.focus(); }
+}
+
+function hideSetupModal() {
+  const modal = document.getElementById('setup-modal');
+  if (modal) modal.hidden = true;
+}
+
+async function verifyAndSaveKey() {
+  const input = document.getElementById('setup-key-input');
+  const errorEl = document.getElementById('setup-error');
+  const btn = document.getElementById('setup-save-btn');
+  const key = input.value.trim();
+
+  if (!key) {
+    errorEl.textContent = '请输入 API Key'; errorEl.hidden = false; return;
+  }
+  if (!key.startsWith('sk-')) {
+    errorEl.textContent = 'Key 格式不正确，应以 sk- 开头'; errorEl.hidden = false; return;
+  }
+
+  errorEl.hidden = true;
+  btn.querySelector('.btn-text').hidden = true;
+  btn.querySelector('.btn-loading').hidden = false;
+  btn.disabled = true;
+
+  try {
+    const res = await fetch('/api/check-key', {
+      headers: { 'X-API-Key': key },
+    });
+    const data = await res.json();
+    if (data.status === 'ok') {
+      setApiKey(key);
+      hideSetupModal();
+      showToast('API Key 验证成功');
+    } else {
+      errorEl.textContent = '验证失败: ' + (data.message || data.status);
+      errorEl.hidden = false;
+    }
+  } catch (e) {
+    errorEl.textContent = '网络错误，请检查连接后重试';
+    errorEl.hidden = false;
+  } finally {
+    btn.querySelector('.btn-text').hidden = false;
+    btn.querySelector('.btn-loading').hidden = true;
+    btn.disabled = false;
+  }
+}
+
+// Auto-inject X-API-Key header into all same-origin API calls
+const _originalFetch = window.fetch;
+window.fetch = function(url, options = {}) {
+  const urlStr = typeof url === 'string' ? url : url.url;
+  if (urlStr && urlStr.includes('/api/') && hasApiKey()) {
+    options.headers = options.headers || {};
+    if (options.headers instanceof Headers) {
+      if (!options.headers.has('X-API-Key')) {
+        options.headers.set('X-API-Key', getApiKey());
+      }
+    } else if (!options.headers['X-API-Key']) {
+      options.headers['X-API-Key'] = getApiKey();
+    }
+  }
+  return _originalFetch.call(this, url, options);
+};
+
+// Auto-show on first visit
+(function checkFirstVisit() {
+  if (!hasApiKey()) {
+    function showWhenReady() {
+      setTimeout(showSetupModal, 500);
+    }
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', showWhenReady);
+    } else {
+      showWhenReady();
+    }
+  }
+})();
+
+// ============================================================
 // Dark Mode
 // ============================================================
 const THEME_KEY = 'mma-theme';
@@ -156,7 +261,11 @@ function showToast(msg) {
   t.className = 'toast';
   t.textContent = msg;
   document.body.appendChild(t);
-  setTimeout(() => t.remove(), 2200);
+  setTimeout(() => {
+    t.style.opacity = '0';
+    t.style.transition = 'opacity .3s ease';
+    setTimeout(() => t.remove(), 300);
+  }, 1900);
 }
 
 // ============================================================
@@ -2949,3 +3058,24 @@ document.addEventListener('keydown', function paperShortcut(e) {
     if (btn) btn.click();
   }
 });
+
+// ============================================================
+// API Key Setup Modal Event Listeners
+// ============================================================
+(function initSetupModal() {
+  const settingsBtn = document.getElementById('settings-btn');
+  if (settingsBtn) settingsBtn.addEventListener('click', showSetupModal);
+  const saveBtn = document.getElementById('setup-save-btn');
+  if (saveBtn) saveBtn.addEventListener('click', verifyAndSaveKey);
+  const skipBtn = document.getElementById('setup-skip-btn');
+  if (skipBtn) skipBtn.addEventListener('click', hideSetupModal);
+  const setupInput = document.getElementById('setup-key-input');
+  if (setupInput) setupInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter') verifyAndSaveKey();
+  });
+  // Close modal on backdrop click
+  const overlay = document.getElementById('setup-modal');
+  if (overlay) overlay.addEventListener('click', e => {
+    if (e.target === overlay) hideSetupModal();
+  });
+})();
