@@ -26,6 +26,17 @@ app = Flask(__name__)
 from flask_cors import CORS
 CORS(app, supports_credentials=False)
 
+
+def _get_api_key():
+    """Read API key from request header. Falls back to config for local dev."""
+    header_key = request.headers.get("X-API-Key", "").strip()
+    if header_key:
+        return header_key
+    # Fallback: local .env for desktop builds
+    import os
+    return os.environ.get("DEEPSEEK_API_KEY", "")
+
+
 # ===== Page Routes =====
 
 @app.route("/")
@@ -155,7 +166,7 @@ def generate():
     )
 
     try:
-        result = generate_response(system_prompt, user_prompt)
+        result = generate_response(system_prompt, user_prompt, api_key=_get_api_key())
         return jsonify({"content": result})
     except Exception as e:
         return jsonify({"error": f"生成失败: {str(e)}"}), 500
@@ -201,7 +212,7 @@ def generate_stream_endpoint():
 
     def generate():
         try:
-            for chunk in generate_stream(system_prompt, user_prompt):
+            for chunk in generate_stream(system_prompt, user_prompt, api_key=_get_api_key()):
                 # Proper SSE framing: each line of the chunk gets its own "data:" prefix.
                 # Empty line (\n\n) marks end of one SSE message.
                 for line in chunk.split('\n'):
@@ -260,7 +271,7 @@ def generate_paper_stream_endpoint():
 
     def generate():
         try:
-            for chunk in generate_stream(system_prompt, user_prompt, max_tokens=12000):
+            for chunk in generate_stream(system_prompt, user_prompt, max_tokens=12000, api_key=_get_api_key()):
                 for line in chunk.split('\n'):
                     yield f"data: {line}\n"
                 yield '\n'
@@ -292,7 +303,7 @@ def ai_report():
     user_prompt = AI_REPORT_PROMPT.format(problem=problem, tools_used=tools_used)
 
     try:
-        result = generate_response(SYSTEM_AI_REPORT, user_prompt)
+        result = generate_response(SYSTEM_AI_REPORT, user_prompt, api_key=_get_api_key())
         return jsonify({"content": result})
     except Exception as e:
         return jsonify({"error": f"生成失败: {str(e)}"}), 500
@@ -354,7 +365,7 @@ def explain_section():
 请用生活类比和简单语言解释核心概念，避免复杂数学公式。最后用一句话总结核心要点。"""
 
     try:
-        result = generate_response(SYSTEM_EXPLAIN, user_prompt, max_tokens=1500)
+        result = generate_response(SYSTEM_EXPLAIN, user_prompt, max_tokens=1500, api_key=_get_api_key())
         return jsonify({"content": result})
     except Exception as e:
         return jsonify({"error": f"解释生成失败: {str(e)}"}), 500
@@ -397,7 +408,7 @@ def generate_paper_latex():
 
     def generate():
         try:
-            for chunk in generate_stream(system_prompt, user_prompt, max_tokens=12000):
+            for chunk in generate_stream(system_prompt, user_prompt, max_tokens=12000, api_key=_get_api_key()):
                 for line in chunk.split('\n'):
                     yield f"data: {line}\n"
                 yield '\n'
@@ -526,7 +537,7 @@ For each formula or derivation, independently re-derive it and check for errors.
 Please provide a structured verification report."""
 
     try:
-        result = generate_response(SYSTEM_MATH_VERIFY, user_prompt, max_tokens=2000)
+        result = generate_response(SYSTEM_MATH_VERIFY, user_prompt, max_tokens=2000, api_key=_get_api_key())
         return jsonify({"content": result})
     except Exception as e:
         return jsonify({"error": f"数学验证失败: {str(e)}"}), 500
@@ -555,7 +566,7 @@ def check_plagiarism():
 Provide a section-by-section originality assessment with specific flagged passages and rewrite suggestions."""
 
     try:
-        result = generate_response(SYSTEM_PLAGIARISM, user_prompt, max_tokens=2000)
+        result = generate_response(SYSTEM_PLAGIARISM, user_prompt, max_tokens=2000, api_key=_get_api_key())
         return jsonify({"content": result})
     except Exception as e:
         return jsonify({"error": f"查重分析失败: {str(e)}"}), 500
@@ -615,7 +626,7 @@ Original paper:
 Please provide the complete rewritten paper that says the same thing differently."""
 
     try:
-        result = generate_response(SYSTEM_DEDUP, user_prompt, max_tokens=3000)
+        result = generate_response(SYSTEM_DEDUP, user_prompt, max_tokens=3000, api_key=_get_api_key())
         return jsonify({"content": result, "mode": mode})
     except Exception as e:
         return jsonify({"error": f"降重改写失败: {str(e)}"}), 500
@@ -644,7 +655,7 @@ def refine_abstract():
     )
 
     try:
-        result = generate_response(SYSTEM_ABSTRACT_REFINE, user_prompt, max_tokens=2000)
+        result = generate_response(SYSTEM_ABSTRACT_REFINE, user_prompt, max_tokens=2000, api_key=_get_api_key())
         return jsonify({"content": result})
     except Exception as e:
         return jsonify({"error": f"摘要优化失败: {str(e)}"}), 500
@@ -677,7 +688,7 @@ def generate_sensitivity():
     )
 
     try:
-        result = generate_response(SYSTEM_SENSITIVITY, user_prompt, max_tokens=3000)
+        result = generate_response(SYSTEM_SENSITIVITY, user_prompt, max_tokens=3000, api_key=_get_api_key())
         return jsonify({"content": result})
     except Exception as e:
         return jsonify({"error": f"敏感性分析生成失败: {str(e)}"}), 500
@@ -706,7 +717,7 @@ def score_paper():
     )
 
     try:
-        result = generate_response(SYSTEM_PAPER_SCORING, user_prompt, max_tokens=2500)
+        result = generate_response(SYSTEM_PAPER_SCORING, user_prompt, max_tokens=2500, api_key=_get_api_key())
         return jsonify({"content": result})
     except Exception as e:
         return jsonify({"error": f"论文评分失败: {str(e)}"}), 500
@@ -737,7 +748,7 @@ def recommend_models():
     )
 
     try:
-        result = generate_response(SYSTEM_MODEL_RECOMMEND, user_prompt, max_tokens=2000)
+        result = generate_response(SYSTEM_MODEL_RECOMMEND, user_prompt, max_tokens=2000, api_key=_get_api_key())
         return jsonify({"content": result})
     except Exception as e:
         return jsonify({"error": f"模型推荐失败: {str(e)}"}), 500
@@ -766,7 +777,7 @@ def suggest_figures():
     )
 
     try:
-        result = generate_response(SYSTEM_FIGURE_SUGGEST, user_prompt, max_tokens=3000)
+        result = generate_response(SYSTEM_FIGURE_SUGGEST, user_prompt, max_tokens=3000, api_key=_get_api_key())
         return jsonify({"content": result})
     except Exception as e:
         return jsonify({"error": f"图表建议生成失败: {str(e)}"}), 500
@@ -791,7 +802,7 @@ def compare_papers():
     )
 
     try:
-        result = generate_response(SYSTEM_PAPER_COMPARE, user_prompt, max_tokens=2500)
+        result = generate_response(SYSTEM_PAPER_COMPARE, user_prompt, max_tokens=2500, api_key=_get_api_key())
         return jsonify({"content": result})
     except Exception as e:
         return jsonify({"error": f"论文对比失败: {str(e)}"}), 500
@@ -801,17 +812,15 @@ def compare_papers():
 
 @app.route("/api/check-key", methods=["GET"])
 def check_key():
-    import config
-    key = config.DEEPSEEK_API_KEY
-    if not key or key == "your-api-key-here":
+    key = _get_api_key()
+    if not key:
         return jsonify({"status": "missing"})
     if not key.startswith("sk-"):
         return jsonify({"status": "invalid_format"})
-    # Quick liveness test — minimal call
     try:
         resp = generate_response(
             "You are a helpful assistant.", "Reply with just: OK",
-            max_tokens=5,
+            max_tokens=5, api_key=key,
         )
         return jsonify({"status": "ok"}) if resp else jsonify({"status": "no_response"})
     except Exception as e:
@@ -831,7 +840,7 @@ def mock_review():
 
     user_prompt = MOCK_REVIEW_PROMPT.format(content=content[:15000])
     try:
-        result = generate_response(SYSTEM_MOCK_REVIEW, user_prompt, max_tokens=3000)
+        result = generate_response(SYSTEM_MOCK_REVIEW, user_prompt, max_tokens=3000, api_key=_get_api_key())
         return jsonify({"content": result})
     except Exception as e:
         return jsonify({"error": f"模拟评审失败: {str(e)}"}), 500
@@ -870,7 +879,7 @@ def analyze_paper():
             full_text = full_text[:max_chars] + "\n\n... [内容已截断]"
 
         user_prompt = PAPER_ANALYZE_PROMPT.format(content=full_text)
-        result = generate_response(SYSTEM_PAPER_ANALYZE, user_prompt, max_tokens=3000)
+        result = generate_response(SYSTEM_PAPER_ANALYZE, user_prompt, max_tokens=3000, api_key=_get_api_key())
         return jsonify({"content": result})
     except Exception as e:
         return jsonify({"error": f"论文分析失败: {str(e)}"}), 500

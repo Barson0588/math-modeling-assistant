@@ -1,23 +1,30 @@
 import time
+import os
 from openai import OpenAI, APIError, APIConnectionError, APITimeoutError, RateLimitError
-import config
-
-_client = OpenAI(
-    api_key=config.DEEPSEEK_API_KEY,
-    base_url=config.DEEPSEEK_BASE_URL,
-    timeout=90.0,
-)
 
 MAX_RETRIES = 3
 RETRY_DELAY = 2.0
+DEFAULT_BASE_URL = "https://api.deepseek.com"
 
 
-def generate_response(system_prompt, user_prompt, max_tokens=8000):
+def _make_client(api_key):
+    return OpenAI(
+        api_key=api_key,
+        base_url=DEFAULT_BASE_URL,
+        timeout=90.0,
+    )
+
+
+def generate_response(system_prompt, user_prompt, max_tokens=8000, api_key=None):
+    key = api_key or os.environ.get("DEEPSEEK_API_KEY")
+    if not key:
+        raise RuntimeError("DeepSeek API Key is not configured")
+    client = _make_client(key)
     last_error = None
     for attempt in range(MAX_RETRIES):
         try:
-            response = _client.chat.completions.create(
-                model=config.MODEL,
+            response = client.chat.completions.create(
+                model="deepseek-chat",
                 max_tokens=max_tokens,
                 temperature=0.3,
                 messages=[
@@ -37,12 +44,16 @@ def generate_response(system_prompt, user_prompt, max_tokens=8000):
     raise RuntimeError(f"请求失败（已重试 {MAX_RETRIES} 次）: {last_error}")
 
 
-def generate_stream(system_prompt, user_prompt, max_tokens=8000):
+def generate_stream(system_prompt, user_prompt, max_tokens=8000, api_key=None):
+    key = api_key or os.environ.get("DEEPSEEK_API_KEY")
+    if not key:
+        raise RuntimeError("DeepSeek API Key is not configured")
+    client = _make_client(key)
     last_error = None
     for attempt in range(MAX_RETRIES):
         try:
-            stream = _client.chat.completions.create(
-                model=config.MODEL,
+            stream = client.chat.completions.create(
+                model="deepseek-chat",
                 max_tokens=max_tokens,
                 temperature=0.3,
                 messages=[
