@@ -18,7 +18,7 @@
 
 ## 方式一：云端网页（推荐）
 
-访问部署在 Railway 上的公开地址即可使用。
+访问部署在 Railway 上的公开地址即可使用：**[math-modeling-assistant.up.railway.app](https://web-production-b8bf1.up.railway.app/)**
 
 > 需要自行配置 DeepSeek API Key（首次访问时会弹出配置窗口）。
 > Key 存储在浏览器本地，不会上传到服务器。
