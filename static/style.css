@@ -137,6 +137,24 @@ body::before {
 }
 .theme-btn:hover { border-color: var(--accent); transform: scale(1.05); }
 
+.nav-login-link {
+  font-size: 13px; color: var(--text-secondary); text-decoration: none;
+  padding: 4px 10px; border-radius: 6px; transition: color .2s;
+}
+.nav-login-link:hover { color: var(--accent); }
+
+.user-menu {
+  display: flex; align-items: center; gap: 8px;
+}
+.user-email-display {
+  font-size: 12px; color: var(--text-secondary); max-width: 120px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.logout-btn {
+  font-size: 11px; background: none; border: 1px solid var(--border);
+  color: var(--text-secondary); cursor: pointer;
+}
+
 /* ============================================================
    Layout
    ============================================================ */

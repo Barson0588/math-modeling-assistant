@@ -27,6 +27,11 @@
     </div>
     <button id="settings-btn" class="nav-btn settings-btn" title="设置">&#9881;</button>
     <button id="theme-toggle" class="theme-btn" title="切换深色模式">🌙</button>
+    <a href="/login" id="login-link" class="nav-login-link">登录</a>
+    <span id="user-menu" class="user-menu" hidden>
+      <span id="user-email-display" class="user-email-display"></span>
+      <button id="logout-btn" class="btn-sm logout-btn">退出</button>
+    </span>
   </div>
 </nav>
 
@@ -369,6 +374,20 @@
 
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+<script>
+// Check login status before loading main app
+fetch('/api/auth/me').then(r => r.json()).then(data => {
+  if (data.logged_in) {
+    document.getElementById('login-link').hidden = true;
+    var menu = document.getElementById('user-menu');
+    menu.hidden = false;
+    document.getElementById('user-email-display').textContent = data.email;
+    document.getElementById('logout-btn').addEventListener('click', function() {
+      fetch('/api/auth/logout', { method: 'POST' }).then(() => location.reload());
+    });
+  }
+}).catch(() => {});
+</script>
 <script src="/static/script.js"></script>
 <script>
 if ('serviceWorker' in navigator) {
