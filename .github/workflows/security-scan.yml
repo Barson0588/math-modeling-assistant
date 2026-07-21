@@ -1,0 +1,34 @@
+name: Security Vulnerability Scan
+
+on:
+  schedule:
+    # 每周二早上 8:00 运行
+    - cron: '0 0 * * 2'
+  workflow_dispatch:
+
+jobs:
+  safety-scan:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install safety
+
+      - name: Run Safety vulnerability scan
+        continue-on-error: true
+        run: safety check --full-report
+
+      - name: Run pip-audit
+        continue-on-error: true
+        run: |
+          pip install pip-audit
+          pip-audit
