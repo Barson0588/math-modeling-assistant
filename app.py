@@ -23,6 +23,8 @@ from src.scholar import search_by_keywords, format_references_apa
 
 app = Flask(__name__)
 
+from flask_cors import CORS
+CORS(app, supports_credentials=False)
 
 # ===== Page Routes =====
 
