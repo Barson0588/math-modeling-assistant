@@ -8,7 +8,7 @@
 
 ### macOS
 
-[**下载 MathModelingAssistant.dmg (v1.1.0)**](https://github.com/chengfengyi-falcon/math-modeling-assistant/releases/download/v1.1.0/MathModelingAssistant-1.0.0.dmg)
+[**下载 MathModelingAssistant.dmg (v1.1.0)**](https://github.com/Barson0588/math-modeling-assistant/releases/download/v1.1.0/MathModelingAssistant-1.0.0.dmg)
 
 1. 下载 DMG，双击打开，将 `MathModelingAssistant.app` 拖入 `Applications`
 2. 首次启动时，应用会自动打开配置文件，填入 [DeepSeek API Key](https://platform.deepseek.com/api_keys) 后重启应用
@@ -16,13 +16,13 @@
 
 ### Windows
 
-1. 克隆仓库: `git clone https://github.com/chengfengyi-falcon/math-modeling-assistant.git`
+1. 克隆仓库: `git clone https://github.com/Barson0588/math-modeling-assistant.git`
 2. 安装依赖: `pip install pyinstaller -r requirements.txt`
 3. 运行 `win_build.bat`
 4. 在 `dist\MathModelingAssistant\` 中找到 `MathModelingAssistant.exe`，双击运行
 5. 首次启动时会弹出配置文件，填入 [DeepSeek API Key](https://platform.deepseek.com/api_keys) 后重启应用
 
-> 更多版本见 [Releases 页面](https://github.com/chengfengyi-falcon/math-modeling-assistant/releases)
+> 更多版本见 [Releases 页面](https://github.com/Barson0588/math-modeling-assistant/releases)
 
 ## 功能
 
@@ -59,7 +59,7 @@ Markdown 渲染 (论文框架 + 数学转编程 + Python 代码)
 ### 2. 克隆并安装
 
 ```bash
-git clone https://github.com/chengfengyi-falcon/math-modeling-assistant.git
+git clone https://github.com/Barson0588/math-modeling-assistant.git
 cd math-modeling-assistant
 pip install -r requirements.txt
 ```

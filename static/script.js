@@ -2131,19 +2131,6 @@ function renderVizTemplates(templates) {
 }
 
 // ============================================================
-// Update keyboard shortcut — add Paper tab (6)
-// ============================================================
-// Monkey-patch the existing handler: add '6': 'paper' to tabKeys
-// Already handled in the unified handler — update tabKeys object
-(function updateShortcuts() {
-  const handler = document.addEventListener.toString();
-  // We redefine the keydown listener — actually just add paper in the
-  // existing tabKeys object. Since it's already registered, we override.
-  const origHandler = document.onkeydown;
-})();
-
-
-// ============================================================
 // Data Source Highlighter — highlight SIMULATED DATA comments
 // ============================================================
 function injectDataSourceHighlights(container) {
