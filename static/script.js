@@ -271,15 +271,16 @@ document.querySelectorAll('.bottom-nav-btn').forEach(btn => {
 // Toast
 // ============================================================
 function showToast(msg) {
-  const t = document.createElement('div');
-  t.className = 'toast';
-  t.textContent = msg;
-  document.body.appendChild(t);
+  const existing = document.querySelector('.toast');
+  if (existing) { existing.remove(); }
+  const toast = document.createElement('div');
+  toast.className = 'toast';
+  toast.textContent = msg;
+  document.body.appendChild(toast);
   setTimeout(() => {
-    t.style.opacity = '0';
-    t.style.transition = 'opacity .3s ease';
-    setTimeout(() => t.remove(), 300);
-  }, 1900);
+    toast.classList.add('hiding');
+    toast.addEventListener('animationend', () => toast.remove());
+  }, 3000);
 }
 
 // ============================================================
@@ -799,6 +800,9 @@ generateBtn.addEventListener('click', async () => {
     injectQuickActions();
     injectScholarButton();
     injectModelRecommendBtn();
+    // Completion animation
+    resultContent.classList.add('completed');
+    setTimeout(() => resultContent.classList.remove('completed'), 2500);
     if (!errorOccurred && fullContent) {
       saveHistory(problem, contestType, problemType, fullContent);
       saveDraft(problem, contestType, problemType, fullContent);
@@ -884,8 +888,13 @@ document.getElementById('copy-btn').addEventListener('click', () => {
   const text = resultContent.innerText;
   navigator.clipboard.writeText(text).then(() => {
     const btn = document.getElementById('copy-btn');
-    btn.textContent = '已复制';
-    setTimeout(() => btn.textContent = '复制全文', 1500);
+    const originalText = btn.textContent;
+    btn.classList.add('copy-done');
+    btn.textContent = '已复制!';
+    setTimeout(() => {
+      btn.classList.remove('copy-done');
+      btn.textContent = originalText;
+    }, 1500);
   }).catch(() => showToast('复制失败'));
 });
 
@@ -1069,6 +1078,9 @@ paperGenerateBtn.addEventListener('click', async () => {
     injectExplainButtons(paperContent);
     injectPaperStats();
     injectQuickActions();
+    // Completion animation
+    paperContent.classList.add('completed');
+    setTimeout(() => paperContent.classList.remove('completed'), 2500);
     if (!errorOccurred && fullContent) {
       savePaperHistory(problem, contestType, problemType, fullContent);
       showToast('论文生成完成');
@@ -1110,8 +1122,13 @@ document.getElementById('paper-copy-btn').addEventListener('click', () => {
   const text = paperContent.innerText;
   navigator.clipboard.writeText(text).then(() => {
     const btn = document.getElementById('paper-copy-btn');
-    btn.textContent = '已复制';
-    setTimeout(() => btn.textContent = '复制全文', 1500);
+    const originalText = btn.textContent;
+    btn.classList.add('copy-done');
+    btn.textContent = '已复制!';
+    setTimeout(() => {
+      btn.classList.remove('copy-done');
+      btn.textContent = originalText;
+    }, 1500);
   }).catch(() => showToast('复制失败'));
 });
 
@@ -1791,9 +1808,14 @@ function injectCodeCopyButtons(container) {
     btn.textContent = '复制';
     btn.addEventListener('click', () => {
       const code = pre.querySelector('code') ? pre.querySelector('code').innerText : pre.innerText;
+      const originalText = btn.textContent;
       navigator.clipboard.writeText(code).then(() => {
-        btn.textContent = '已复制';
-        setTimeout(() => btn.textContent = '复制', 1500);
+        btn.classList.add('copy-done');
+        btn.textContent = '已复制!';
+        setTimeout(() => {
+          btn.classList.remove('copy-done');
+          btn.textContent = originalText;
+        }, 1500);
       });
     });
     wrapper.appendChild(btn);
@@ -2645,8 +2667,12 @@ function copyDedupResult(btn) {
   const container = document.getElementById('dedup-result');
   const text = container ? container.dataset.rewrittenContent || container.innerText : '';
   navigator.clipboard.writeText(text).then(() => {
-    btn.textContent = '已复制';
-    setTimeout(() => btn.textContent = '复制改写内容', 1500);
+    btn.classList.add('copy-done');
+    btn.textContent = '已复制!';
+    setTimeout(() => {
+      btn.classList.remove('copy-done');
+      btn.textContent = '复制改写内容';
+    }, 1500);
   });
 }
 

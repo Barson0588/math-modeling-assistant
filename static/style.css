@@ -2089,3 +2089,242 @@ footer { text-align: center; padding: 24px; color: var(--text-secondary); font-s
   .result-toolbar { flex-wrap: wrap; gap: 8px; }
   .result-toolbar .result-actions { width: 100%; }
 }
+
+/* ============================================================
+   Animation System — L1: CSS Transitions
+   ============================================================ */
+
+/* Tab content switch */
+.tab {
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 0.2s ease-out, transform 0.2s ease-out;
+  pointer-events: none;
+}
+.tab.active {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+/* Card hover lift */
+.card, .model-card, .viz-template, .tool-card {
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.card:hover, .model-card:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-lg);
+}
+
+/* Button press feedback */
+.btn-primary:active, .btn-sm:active, .btn-secondary:active {
+  transform: scale(0.97);
+  transition: transform 0.1s ease;
+}
+
+/* Model card glow on hover */
+.model-card {
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.model-card:hover {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
+/* Nav button */
+.nav-btn {
+  transition: color 0.15s ease, background 0.15s ease;
+}
+
+/* Result card reveal */
+.result-card.visible {
+  animation: fadeSlideUp 0.4s ease-out;
+}
+@keyframes fadeSlideUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ============================================================
+   Animation System — L2: Sidebar & Modal
+   ============================================================ */
+
+/* Sidebar slide-in */
+.result-sidebar {
+  transform: translateX(100%);
+  transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.result-sidebar.open {
+  transform: translateX(0);
+}
+
+/* Sidebar backdrop */
+.result-sidebar-backdrop {
+  opacity: 0;
+  transition: opacity 0.25s ease;
+  pointer-events: none;
+}
+.result-sidebar-backdrop.open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Explain panel */
+.explain-panel {
+  animation: slideUp 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+}
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Modal entrance */
+@keyframes modalIn {
+  from { opacity: 0; transform: scale(0.95); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+/* Overlay fade */
+.overlay {
+  animation: fadeIn 0.2s ease;
+}
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* Paper stats slide down */
+.paper-stats {
+  animation: slideDown 0.35s ease-out;
+}
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ============================================================
+   Animation System — L3: Streaming Generation
+   ============================================================ */
+
+/* Stage indicator pulse */
+.stage-indicator .stage-dot {
+  display: inline-block; width: 8px; height: 8px;
+  border-radius: 50%; background: var(--accent);
+  animation: pulse 1.4s ease-in-out infinite;
+  margin-right: 8px; vertical-align: middle;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: 0.3; transform: scale(0.75); }
+}
+
+/* Streaming cursor blink */
+.streaming-cursor::after {
+  content: '|'; color: var(--accent);
+  animation: blink 1s step-end infinite;
+  font-weight: 700;
+}
+@keyframes blink {
+  50% { opacity: 0; }
+}
+
+/* Content fade-in for new paragraphs */
+.markdown-body > * {
+  animation: contentFadeIn 0.3s ease-out;
+}
+@keyframes contentFadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Skeleton loading shimmer */
+.skeleton {
+  background: linear-gradient(90deg, var(--border) 25%, transparent 50%, var(--border) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+  border-radius: var(--radius-sm);
+  height: 16px; margin: 8px 0;
+}
+@keyframes shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* Completion glow */
+.result-card.completed {
+  animation: glowPulse 2s ease-out;
+}
+@keyframes glowPulse {
+  0%   { box-shadow: 0 0 0 0 var(--accent-glow); }
+  50%  { box-shadow: 0 0 0 8px var(--accent-glow); }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+
+/* ============================================================
+   Animation System — L4: Micro-interactions
+   ============================================================ */
+
+/* Toast slide-in */
+.toast {
+  animation: toastIn 0.3s ease-out;
+}
+.toast.hiding {
+  animation: toastOut 0.25s ease-in forwards;
+}
+@keyframes toastIn {
+  from { opacity: 0; transform: translateY(-12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes toastOut {
+  from { opacity: 1; transform: translateY(0); }
+  to   { opacity: 0; transform: translateY(-12px); }
+}
+
+/* Star/favorite pop */
+.history-item-star.starred {
+  animation: starPop 0.3s ease;
+}
+@keyframes starPop {
+  0%   { transform: scale(1); }
+  50%  { transform: scale(1.35); }
+  100% { transform: scale(1); }
+}
+
+/* Copy button feedback */
+.copy-done {
+  animation: copyPop 0.3s ease;
+  color: var(--green);
+}
+@keyframes copyPop {
+  0%   { transform: scale(1); }
+  50%  { transform: scale(1.2); }
+  100% { transform: scale(1); }
+}
+
+/* Verification checklist item toggle */
+.verify-item {
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+/* History item hover */
+.history-item {
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.history-item:hover {
+  transform: translateX(4px);
+}
+
+/* Viz template expand */
+.viz-template[open] .viz-template-body {
+  animation: expandDown 0.2s ease;
+}
+@keyframes expandDown {
+  from { opacity: 0; max-height: 0; }
+  to   { opacity: 1; max-height: 1000px; }
+}
+
+/* Edit textarea focus */
+.edit-textarea:focus {
+  transition: box-shadow 0.2s ease;
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
