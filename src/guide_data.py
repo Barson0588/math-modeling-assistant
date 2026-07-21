@@ -1,0 +1,132 @@
+GUIDE = {
+    "timeline": [
+        {
+            "day": "Day 1 (周四晚 - 周五)",
+            "goal": "选题 + 理解题目 + 查资料 + 确定初步模型思路",
+            "modeler": "通读所有题目，评估每个题目的数学难度和可行性，参与选题讨论。选定后深入分析，确定1-2个候选模型方案。",
+            "programmer": "查找相关代码资源、数据集、开源实现。评估模型的计算可行性。准备数据处理和可视化环境。",
+            "writer": "阅读优秀论文摘要，准备 LaTeX 模板。开始写问题重述和背景部分草稿。整理参考文献。",
+            "checkpoint": "周五 12:00 前确定选题",
+        },
+        {
+            "day": "Day 2 (周六)",
+            "goal": "模型建立 + 编程实现 + 初步结果",
+            "modeler": "完整推导模型公式，写出数学推导过程。与编程手反复沟通，将数学语言转化为算法。开始写模型建立章节。",
+            "programmer": "实现模型核心算法，跑出初步结果。做基础可视化。与建模手核对公式的正确实现。",
+            "writer": "完成问题重述、模型假设、符号说明。整理建模手的推导草稿成论文格式。绘制模型流程图。",
+            "checkpoint": "周六 22:00 前跑出第一版结果",
+        },
+        {
+            "day": "Day 3 (周日)",
+            "goal": "结果分析 + 敏感性检验 + 论文主体成型",
+            "modeler": "设计敏感性分析方案，确定需要检验的关键参数。分析结果，判断是否需要调整模型。写模型评价和改进章节。",
+            "programmer": "实现敏感性分析代码。优化可视化图表（高分辨率、规范标注）。跑最终结果。",
+            "writer": "写结果分析和敏感性分析章节。打磨所有图表标题和标注。开始写摘要草稿。",
+            "checkpoint": "周日 22:00 前论文主体完成 80%",
+        },
+        {
+            "day": "Day 4 (周一)",
+            "goal": "摘要定稿 + 全文润色 + 提交",
+            "modeler": "审核全文数学内容准确性，确保公式、符号、逻辑无误。",
+            "programmer": "整理附录代码，确保可复现。生成最终版图表。",
+            "writer": "摘要至少修改8稿。全文语言润色、格式统一。检查页数限制。最终提交。",
+            "checkpoint": "周一 18:00 前完成提交",
+        },
+    ],
+    "tools": [
+        {"name": "Python", "use": "数据处理、模型实现、可视化", "pkgs": "numpy, scipy, pandas, matplotlib, sklearn"},
+        {"name": "MATLAB", "use": "数值计算、符号运算、Simulink仿真", "pkgs": "Optimization Toolbox, Statistics Toolbox"},
+        {"name": "LaTeX", "use": "论文排版（强烈推荐）", "pkgs": "Overleaf 在线编辑器"},
+        {"name": "draw.io", "use": "流程图、示意图绘制", "pkgs": "-"},
+        {"name": "Excel / GeoGebra", "use": "快速数据处理 / 几何可视化", "pkgs": "-"},
+        {"name": "Git", "use": "团队协作版本控制", "pkgs": "GitHub / Gitee"},
+        {"name": "Zotero / Mendeley", "use": "参考文献管理", "pkgs": "-"},
+    ],
+    "submission_checklist": {
+        "mcm": [
+            {"id": "mcm-abstract", "text": "摘要 200-250 词，无公式，无引用，单独成页"},
+            {"id": "mcm-pages", "text": "论文正文 + 附录 ≤ 25 页"},
+            {"id": "mcm-ai-report", "text": "AI Use Report 已附加（不计入 25 页限制）"},
+            {"id": "mcm-figures", "text": "所有图表有编号、标题（图标题在下，表标题在上）"},
+            {"id": "mcm-references", "text": "参考文献格式 APA 7th edition，15-20 条"},
+            {"id": "mcm-filename", "text": "文件命名符合 COMAP 规范（Team#XXXXX.pdf）"},
+            {"id": "mcm-signature", "text": "电子签名页已签署并附在论文后"},
+        ],
+        "cumcm": [
+            {"id": "cumcm-abstract", "text": "摘要单独一页，300 字左右，含关键词"},
+            {"id": "cumcm-cover", "text": "论文编号页完整（学校、队员、指导教师信息）"},
+            {"id": "cumcm-appendix", "text": "附录代码完整可运行，标注运行环境"},
+            {"id": "cumcm-pledge", "text": "承诺书已签署"},
+            {"id": "cumcm-filename", "text": "文件命名符合 CUMCM 规范"},
+        ],
+    },
+    "code_standards": {
+        "structure": "每个模型一个 .py 文件，main.py 统一调用",
+        "naming": "函数用 snake_case，类用 PascalCase，变量名要有意义",
+        "comments": "每个函数必须有 docstring，关键步骤有行内注释",
+        "reproducibility": "设置随机种子 np.random.seed(42)，记录所有参数",
+        "output": "图表保存为 300dpi PNG，数据结果保存为 CSV",
+    },
+    "viz_templates": [
+        {
+            "name": "敏感性分析热力图",
+            "use": "展示多参数变化对目标函数的影响",
+            "code": "import numpy as np\nimport matplotlib.pyplot as plt\nimport seaborn as sns\n\n# 参数范围和步长\nalpha_range = np.linspace(0.1, 2.0, 20)\nbeta_range = np.linspace(0.5, 1.5, 20)\n\n# 计算目标函数矩阵\nZ = np.zeros((len(alpha_range), len(beta_range)))\nfor i, a in enumerate(alpha_range):\n    for j, b in enumerate(beta_range):\n        Z[i, j] = a * np.exp(-b) + b**2  # 替换为你的目标函数\n\nplt.figure(figsize=(8, 6))\nsns.heatmap(Z, xticklabels=np.round(beta_range, 2),\n            yticklabels=np.round(alpha_range, 2),\n            cmap='RdYlBu_r', annot=False, cbar_kws={'label': 'Objective Value'})\nplt.xlabel('Parameter β')\nplt.ylabel('Parameter α')\nplt.title('Sensitivity Analysis Heatmap')\nplt.tight_layout()\nplt.savefig('sensitivity_heatmap.png', dpi=300)\nplt.show()",
+        },
+        {
+            "name": "多方案对比柱状图",
+            "use": "不同模型/方案的性能指标对比",
+            "code": "import numpy as np\nimport matplotlib.pyplot as plt\n\nmodels = ['Model A', 'Model B', 'Model C', 'Model D']\nscores = [0.92, 0.87, 0.95, 0.83]\nerrors = [0.03, 0.05, 0.02, 0.04]\n\nx = np.arange(len(models))\ncolors = ['#2196F3', '#FF9800', '#4CAF50', '#F44336']\n\nfig, ax = plt.subplots(figsize=(8, 5))\nbars = ax.bar(x, scores, yerr=errors, color=colors, capsize=8, width=0.5)\nax.set_xticks(x)\nax.set_xticklabels(models, fontsize=11)\nax.set_ylabel('Score', fontsize=12)\nax.set_title('Model Performance Comparison', fontsize=14, fontweight='bold')\nax.set_ylim(0, 1.1)\nfor bar, score in zip(bars, scores):\n    ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.02,\n            f'{score:.3f}', ha='center', fontsize=10)\nplt.tight_layout()\nplt.savefig('model_comparison.png', dpi=300)\nplt.show()",
+        },
+        {
+            "name": "网络关系图",
+            "use": "展示节点间的关联关系（如交通网络、社交网络）",
+            "code": "import numpy as np\nimport matplotlib.pyplot as plt\nimport networkx as nx\n\nG = nx.Graph()\nnodes = ['S1', 'S2', 'S3', 'S4', 'S5', 'S6']\nedges = [('S1','S2', 0.8), ('S2','S3', 0.5), ('S3','S4', 0.9),\n         ('S4','S5', 0.3), ('S5','S1', 0.7), ('S2','S6', 0.6),\n         ('S6','S3', 0.4), ('S1','S4', 0.2)]\nG.add_nodes_from(nodes)\nfor u, v, w in edges:\n    G.add_edge(u, v, weight=w)\n\npos = nx.spring_layout(G, seed=42)\nfig, ax = plt.subplots(figsize=(8, 6))\nweights = [G[u][v]['weight'] for u, v in G.edges()]\nnx.draw_networkx_nodes(G, pos, node_color='lightblue', node_size=800, ax=ax)\nnx.draw_networkx_labels(G, pos, font_size=11, font_weight='bold', ax=ax)\nnx.draw_networkx_edges(G, pos, width=[w*3 for w in weights],\n                       edge_color=weights, edge_cmap=plt.cm.Blues, ax=ax)\nplt.title('Network Relationship Graph', fontsize=14, fontweight='bold')\nplt.axis('off')\nplt.tight_layout()\nplt.savefig('network_graph.png', dpi=300)\nplt.show()",
+        },
+        {
+            "name": "拟合曲线与置信区间",
+            "use": "数据拟合结果的可视化，含置信带",
+            "code": "import numpy as np\nimport matplotlib.pyplot as plt\nfrom scipy.optimize import curve_fit\n\n# 示例数据\nx_data = np.linspace(0, 10, 30)\ny_data = 2.5 * np.exp(-0.3 * x_data) + 0.5 + np.random.normal(0, 0.1, 30)\n\ndef model(x, a, b, c):\n    return a * np.exp(-b * x) + c\n\npopt, pcov = curve_fit(model, x_data, y_data, p0=[3, 0.5, 0])\nx_fit = np.linspace(0, 10, 200)\ny_fit = model(x_fit, *popt)\n\n# 95% 置信区间\nperr = np.sqrt(np.diag(pcov))\ny_low = model(x_fit, *(popt - 1.96*perr))\ny_high = model(x_fit, *(popt + 1.96*perr))\n\nfig, ax = plt.subplots(figsize=(8, 5))\nax.scatter(x_data, y_data, c='#2196F3', s=40, zorder=5, label='Data')\nax.plot(x_fit, y_fit, 'r-', linewidth=2, label=f'Fit: y={popt[0]:.2f}exp(-{popt[1]:.2f}x)+{popt[2]:.2f}')\nax.fill_between(x_fit, y_low, y_high, alpha=0.2, color='red', label='95% CI')\nax.set_xlabel('x', fontsize=12)\nax.set_ylabel('y', fontsize=12)\nax.set_title('Curve Fitting with Confidence Interval', fontsize=14, fontweight='bold')\nax.legend(fontsize=10)\nplt.tight_layout()\nplt.savefig('curve_fitting.png', dpi=300)\nplt.show()",
+        },
+        {
+            "name": "多子图面板",
+            "use": "多个相关图表并列展示，适合多变量分析",
+            "code": "import numpy as np\nimport matplotlib.pyplot as plt\n\nt = np.linspace(0, 10, 500)\nx1 = np.sin(t) * np.exp(-0.1 * t)\nx2 = np.cos(t) * np.exp(-0.1 * t)\n\nfig, axes = plt.subplots(2, 2, figsize=(10, 8))\n\naxes[0, 0].plot(t, x1, '#2196F3', linewidth=1.5)\naxes[0, 0].set_title('Damped Sine')\naxes[0, 0].set_xlabel('t')\naxes[0, 0].set_ylabel('Amplitude')\n\naxes[0, 1].plot(t, x2, '#FF9800', linewidth=1.5)\naxes[0, 1].set_title('Damped Cosine')\naxes[0, 1].set_xlabel('t')\n\naxes[1, 0].scatter(x1[::50], x2[::50], c=t[::50], cmap='viridis', s=30)\naxes[1, 0].set_title('Phase Portrait')\naxes[1, 0].set_xlabel('x₁')\naxes[1, 0].set_ylabel('x₂')\n\naxes[1, 1].hist(x1, bins=40, color='#4CAF50', alpha=0.7, edgecolor='white')\naxes[1, 1].set_title('Distribution of x₁')\naxes[1, 1].set_xlabel('Value')\n\nplt.suptitle('Multi-Panel Analysis', fontsize=14, fontweight='bold')\nplt.tight_layout()\nplt.savefig('multi_panel.png', dpi=300)\nplt.show()",
+        },
+        {
+            "name": "三维曲面图",
+            "use": "展示二元函数形态，适合优化问题可视化",
+            "code": "import numpy as np\nimport matplotlib.pyplot as plt\nfrom mpl_toolkits.mplot3d import Axes3D\n\nx = np.linspace(-5, 5, 100)\ny = np.linspace(-5, 5, 100)\nX, Y = np.meshgrid(x, y)\nZ = X**2 + Y**2 + 2*np.sin(X) * np.cos(Y)\n\nfig = plt.figure(figsize=(10, 7))\nax = fig.add_subplot(111, projection='3d')\nsurf = ax.plot_surface(X, Y, Z, cmap='coolwarm', alpha=0.85, linewidth=0, antialiased=True)\nax.contour(X, Y, Z, zdir='z', offset=Z.min(), cmap='coolwarm', alpha=0.5)\nax.set_xlabel('X', fontsize=11)\nax.set_ylabel('Y', fontsize=11)\nax.set_zlabel('f(X, Y)', fontsize=11)\nax.set_title('3D Surface: f(x,y) = x²+y²+2sin(x)cos(y)', fontsize=13, fontweight='bold')\nfig.colorbar(surf, shrink=0.5, aspect=10)\nplt.tight_layout()\nplt.savefig('3d_surface.png', dpi=300)\nplt.show()",
+        },
+        {
+            "name": "收敛性分析图",
+            "use": "迭代算法的收敛过程，误差 vs 迭代次数",
+            "code": "import numpy as np\nimport matplotlib.pyplot as plt\n\niterations = np.arange(1, 101)\nerror_linear = 1.0 / iterations\nerror_quadratic = 1.0 / (iterations ** 2)\nerror_exponential = np.exp(-0.08 * iterations)\n\nfig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11, 4.5))\n\nax1.plot(iterations, error_linear, label='Linear O(1/n)', linewidth=1.5)\nax1.plot(iterations, error_quadratic, label='Quadratic O(1/n²)', linewidth=1.5)\nax1.plot(iterations, error_exponential, label='Exponential O(e⁻ⁿ)', linewidth=1.5)\nax1.set_xlabel('Iteration')\nax1.set_ylabel('Error')\nax1.set_title('Convergence Rate Comparison')\nax1.legend()\nax1.grid(alpha=0.3)\n\nax2.loglog(iterations, error_linear, linewidth=1.5)\nax2.loglog(iterations, error_quadratic, linewidth=1.5)\nax2.loglog(iterations, error_exponential, linewidth=1.5)\nax2.set_xlabel('Iteration (log)')\nax2.set_ylabel('Error (log)')\nax2.set_title('Log-Log Convergence Plot')\nax2.grid(alpha=0.3)\n\nplt.tight_layout()\nplt.savefig('convergence.png', dpi=300)\nplt.show()",
+        },
+        {
+            "name": "误差棒与箱线图",
+            "use": "多组数据的分布与统计特性对比",
+            "code": "import numpy as np\nimport matplotlib.pyplot as plt\n\nnp.random.seed(42)\ndata = [np.random.normal(0, 1, 100),\n        np.random.normal(1, 1.5, 100),\n        np.random.normal(0.5, 0.7, 100),\n        np.random.normal(-0.3, 1.2, 100)]\n\nfig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11, 4.5))\n\nbp = ax1.boxplot(data, patch_artist=True, widths=0.5)\ncolors = ['#2196F3', '#FF9800', '#4CAF50', '#F44336']\nfor patch, color in zip(bp['boxes'], colors):\n    patch.set_facecolor(color)\n    patch.set_alpha(0.7)\nax1.set_xticklabels(['Group A', 'Group B', 'Group C', 'Group D'])\nax1.set_ylabel('Value')\nax1.set_title('Box Plot Comparison')\nax1.grid(axis='y', alpha=0.3)\n\nmeans = [np.mean(d) for d in data]\nstds = [np.std(d) for d in data]\nax2.bar(range(4), means, yerr=stds, color=colors, capsize=8, alpha=0.8)\nax2.set_xticks(range(4))\nax2.set_xticklabels(['Group A', 'Group B', 'Group C', 'Group D'])\nax2.set_ylabel('Mean ± Std')\nax2.set_title('Error Bar Plot')\nax2.grid(axis='y', alpha=0.3)\n\nplt.tight_layout()\nplt.savefig('box_errorbar.png', dpi=300)\nplt.show()",
+        },
+        {
+            "name": "相图/向量场",
+            "use": "微分方程系统的动力学可视化",
+            "code": "import numpy as np\nimport matplotlib.pyplot as plt\n\ndef dx_dt(x, y):\n    return x * (1 - x) - x * y  # 捕食者-猎物模型\n\ndef dy_dt(x, y):\n    return -0.5 * y + x * y\n\nx_range = np.linspace(0, 2, 20)\ny_range = np.linspace(0, 2, 20)\nX, Y = np.meshgrid(x_range, y_range)\nU = dx_dt(X, Y)\nV = dy_dt(X, Y)\nM = np.hypot(U, V)\n\nfig, ax = plt.subplots(figsize=(8, 7))\nax.quiver(X, Y, U/M, V/M, M, cmap='viridis', scale=30, width=0.003)\n\n# 画几条轨迹\nfrom scipy.integrate import odeint\ndef system(state, t):\n    x, y = state\n    return [dx_dt(x, y), dy_dt(x, y)]\n\nt = np.linspace(0, 30, 500)\nfor x0, y0 in [(0.3, 1.5), (0.8, 0.5), (1.5, 0.3), (0.1, 0.1)]:\n    sol = odeint(system, [x0, y0], t)\n    ax.plot(sol[:,0], sol[:,1], 'r-', linewidth=1.2, alpha=0.8)\n\nax.set_xlabel('Prey (x)', fontsize=12)\nax.set_ylabel('Predator (y)', fontsize=12)\nax.set_title('Phase Portrait: Predator-Prey System', fontsize=14, fontweight='bold')\nax.set_xlim(0, 2)\nax.set_ylim(0, 2)\nplt.tight_layout()\nplt.savefig('phase_portrait.png', dpi=300)\nplt.show()",
+        },
+        {
+            "name": "堆叠面积图",
+            "use": "展示多组分随时间/空间的比例变化",
+            "code": "import numpy as np\nimport matplotlib.pyplot as plt\n\nt = np.linspace(0, 10, 200)\na1 = 30 + 10 * np.sin(t)\na2 = 25 + 8 * np.cos(t + 1)\na3 = 20 + 5 * np.sin(2 * t)\na4 = 25 - a1 - a2 - a3 + 100  # 补齐到100%\n\na4 = np.clip(a4, 0, None)\ntotal = a1 + a2 + a3 + a4\na1, a2, a3, a4 = a1/total*100, a2/total*100, a3/total*100, a4/total*100\n\nfig, ax = plt.subplots(figsize=(9, 5))\nax.stackplot(t, a1, a2, a3, a4,\n             labels=['Category A', 'Category B', 'Category C', 'Category D'],\n             colors=['#2196F3', '#FF9800', '#4CAF50', '#9C27B0'], alpha=0.8)\nax.set_xlabel('Time', fontsize=12)\nax.set_ylabel('Proportion (%)', fontsize=12)\nax.set_title('Stacked Area Chart: Composition Over Time', fontsize=14, fontweight='bold')\nax.legend(loc='upper right', fontsize=10)\nax.set_ylim(0, 100)\nplt.tight_layout()\nplt.savefig('stacked_area.png', dpi=300)\nplt.show()",
+        },
+        {
+            "name": "雷达图/蜘蛛图",
+            "use": "多维度指标综合评估，适合敏感性分析结论展示",
+            "code": "import numpy as np\nimport matplotlib.pyplot as plt\n\ncategories = ['Accuracy', 'Speed', 'Robustness', 'Interpretability', 'Scalability', 'Cost']\nN = len(categories)\n\nvalues_a = [4.2, 3.1, 4.8, 2.5, 3.9, 3.2]\nvalues_b = [3.5, 4.5, 3.2, 4.0, 3.1, 4.5]\n\nangles = np.linspace(0, 2*np.pi, N, endpoint=False).tolist()\nvalues_a += values_a[:1]\nvalues_b += values_b[:1]\nangles += angles[:1]\n\nfig, ax = plt.subplots(figsize=(7, 7), subplot_kw=dict(polar=True))\nax.fill(angles, values_a, alpha=0.3, color='#2196F3', label='Model A')\nax.plot(angles, values_a, 'o-', color='#2196F3', linewidth=2, markersize=6)\nax.fill(angles, values_b, alpha=0.3, color='#FF9800', label='Model B')\nax.plot(angles, values_b, 'o-', color='#FF9800', linewidth=2, markersize=6)\nax.set_xticks(angles[:-1])\nax.set_xticklabels(categories, fontsize=11)\nax.set_title('Spider Chart: Model Comparison', fontsize=14, fontweight='bold', pad=20)\nax.legend(loc='upper right', bbox_to_anchor=(1.3, 1.1), fontsize=10)\nplt.tight_layout()\nplt.savefig('radar_chart.png', dpi=300)\nplt.show()",
+        },
+        {
+            "name": "双 Y 轴图",
+            "use": "两个不同量纲的指标在同一时间轴上对比",
+            "code": "import numpy as np\nimport matplotlib.pyplot as plt\n\nt = np.linspace(0, 24, 200)\ntemp = 20 + 8 * np.sin(2 * np.pi * t / 24 - np.pi/2) + np.random.normal(0, 0.5, 200)\nhumidity = 60 + 20 * np.sin(2 * np.pi * t / 24 + np.pi/3) + np.random.normal(0, 1, 200)\n\nfig, ax1 = plt.subplots(figsize=(9, 5))\n\ncolor1 = '#F44336'\nax1.set_xlabel('Time (hours)', fontsize=12)\nax1.set_ylabel('Temperature (°C)', color=color1, fontsize=12)\nax1.plot(t, temp, color=color1, linewidth=1.5, alpha=0.8)\nax1.tick_params(axis='y', labelcolor=color1)\n\nax2 = ax1.twinx()\ncolor2 = '#2196F3'\nax2.set_ylabel('Humidity (%)', color=color2, fontsize=12)\nax2.plot(t, humidity, color=color2, linewidth=1.5, alpha=0.8)\nax2.tick_params(axis='y', labelcolor=color2)\n\nplt.title('Dual-Axis Plot: Temperature & Humidity', fontsize=14, fontweight='bold')\nfig.tight_layout()\nplt.savefig('dual_axis.png', dpi=300)\nplt.show()",
+        },
+    ],
+}

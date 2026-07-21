@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MMA — 离线</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      display: flex; align-items: center; justify-content: center;
+      min-height: 100vh; margin: 0; padding: 24px;
+      background: #f8f9fb; color: #1a1a2e; text-align: center;
+    }
+    .card {
+      background: #fff; border-radius: 12px; padding: 40px;
+      max-width: 400px; box-shadow: 0 4px 12px rgba(0,0,0,.06);
+    }
+    h1 { font-size: 24px; margin-bottom: 12px; }
+    p { color: #6b7280; line-height: 1.6; font-size: 14px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>离线状态</h1>
+    <p>你当前未连接网络。模型库、真题库和竞赛指南可在离线时查看。</p>
+    <p>AI 生成功能需要网络连接，请联网后重试。</p>
+    <p><button onclick="location.reload()" style="padding:10px 24px;border-radius:8px;border:none;background:#2563eb;color:#fff;font-size:14px;cursor:pointer;margin-top:12px">重新连接</button></p>
+  </div>
+</body>
+</html>
