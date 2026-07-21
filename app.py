@@ -15,25 +15,38 @@ from src.prompts import (
     SYSTEM_DEDUP,
 )
 from datetime import date
+import os
 from src.llm_client import generate_response, generate_stream
 from src.models_data import MODELS
 from src.problems_data import PROBLEMS
 from src.guide_data import GUIDE
 from src.scholar import search_by_keywords, format_references_apa
+from src.auth import auth_bp, get_current_user, decrypt_api_key
+from src.db import init_db
 
 app = Flask(__name__)
 
 from flask_cors import CORS
-CORS(app, supports_credentials=False)
+CORS(app, supports_credentials=True)
+
+app.register_blueprint(auth_bp)
+
+# Initialize database on startup
+init_db()
 
 
 def _get_api_key():
-    """Read API key from request header. Falls back to config for local dev."""
+    """Read API key from request header, server-side stored key, or env var."""
     header_key = request.headers.get("X-API-Key", "").strip()
     if header_key:
         return header_key
+    # Try server-side stored key for logged-in users
+    user = get_current_user()
+    if user and user['encrypted_api_key']:
+        key = decrypt_api_key(user['encrypted_api_key'])
+        if key:
+            return key
     # Fallback: local .env for desktop builds
-    import os
     return os.environ.get("DEEPSEEK_API_KEY", "")
 
 
@@ -43,6 +56,15 @@ def _get_api_key():
 def index():
     return render_template("index.html")
 
+
+@app.route("/login")
+def login_page():
+    return render_template("login.html")
+
+
+@app.route("/register")
+def register_page():
+    return render_template("register.html")
 
 # ===== API: Team Roles =====
 
