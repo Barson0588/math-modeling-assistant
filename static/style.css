@@ -2702,6 +2702,139 @@ footer { text-align: center; padding: 24px; color: var(--text-secondary); font-s
   .teammate-mic-btn { display: inline-block !important; }
 }
 
+/* ---- Drag bar & Collapse bar (glass bubble panel) ---- */
+.teammate-drag-bar {
+  height: 28px; cursor: grab; user-select: none;
+  background: transparent;
+  border-radius: var(--radius) var(--radius) 0 0;
+  transition: background .15s;
+}
+.teammate-drag-bar:active { cursor: grabbing; }
+.teammate-drag-bar:hover { background: rgba(255,255,255,.03); }
+
+.teammate-collapse-bar {
+  display: flex; align-items: center; padding: 8px 12px;
+  cursor: pointer; user-select: none;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+  gap: 8px;
+  transition: all .2s;
+}
+.teammate-collapse-bar:hover {
+  box-shadow: var(--shadow-xl);
+  transform: translateY(-1px);
+}
+
+/* Collapsed panel: only collapse bar visible */
+.teammate-panel.collapsed .teammate-messages,
+.teammate-panel.collapsed .teammate-input-row,
+.teammate-panel.collapsed .teammate-drag-bar { display: none; }
+.teammate-panel.collapsed { overflow: visible; }
+.teammate-panel.collapsed .teammate-collapse-bar { display: flex; }
+
+/* Avatar row for teammate messages */
+.msg-avatar-row {
+  display: flex; align-items: flex-start; gap: 8px;
+}
+.msg-avatar-row .msg-text { flex: 1; min-width: 0; }
+
+/* ============================================================
+   MMA Welcome Splash Screen
+   ============================================================ */
+.mma-welcome {
+  position: fixed; inset: 0; z-index: 10000;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--bg);
+  cursor: pointer;
+}
+.mma-welcome.dismissing {
+  animation: welcomeDismiss .5s ease forwards;
+  pointer-events: none;
+}
+@keyframes welcomeDismiss {
+  to { opacity: 0; transform: scale(1.02); }
+}
+
+.mma-welcome-blobs {
+  position: absolute; inset: 0; overflow: hidden; z-index: 0;
+}
+.mma-blob {
+  position: absolute; border-radius: 50%;
+  filter: blur(80px); opacity: 0.45;
+  animation: blobFloat 14s ease-in-out infinite;
+}
+.mma-blob.blob-1 {
+  width: 320px; height: 320px;
+  background: var(--accent-glow);
+  top: 12%; left: 8%;
+  animation-delay: 0s;
+}
+.mma-blob.blob-2 {
+  width: 260px; height: 260px;
+  background: var(--purple-light);
+  top: 50%; right: 8%;
+  animation-delay: -5s;
+}
+.mma-blob.blob-3 {
+  width: 220px; height: 220px;
+  background: var(--accent-glow);
+  bottom: 8%; left: 35%;
+  animation-delay: -10s;
+}
+@keyframes blobFloat {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  25% { transform: translate(40px, -25px) scale(1.06); }
+  50% { transform: translate(-25px, 30px) scale(0.94); }
+  75% { transform: translate(-35px, -15px) scale(1.04); }
+}
+
+.mma-welcome-glass {
+  position: relative; z-index: 1;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 48px 64px; text-align: center;
+  box-shadow: var(--shadow-xl), var(--rim-highlight);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  animation: welcomeCardIn .6s .1s cubic-bezier(.16,1,.3,1) both;
+}
+@keyframes welcomeCardIn {
+  from { opacity: 0; transform: translateY(20px) scale(.95); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.mma-welcome-title {
+  font-size: 52px; font-weight: 800; letter-spacing: -.03em;
+  background: linear-gradient(135deg, var(--accent), var(--purple));
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin-bottom: 16px;
+}
+
+.mma-welcome-subtitle {
+  font-size: 16px; color: var(--text-secondary);
+  margin-bottom: 32px; font-weight: 400;
+}
+
+.mma-welcome-hint {
+  font-size: 13px; color: var(--text-secondary);
+  opacity: .5;
+  animation: welcomeHintPulse 2s ease-in-out infinite;
+}
+@keyframes welcomeHintPulse {
+  0%, 100% { opacity: .35; }
+  50% { opacity: .75; }
+}
+
+@media (max-width: 640px) {
+  .mma-welcome-glass { padding: 36px 28px; margin: 16px; border-radius: 16px; }
+  .mma-welcome-title { font-size: 36px; }
+  .mma-blob { filter: blur(50px); }
+}
+
 /* ============================================================
    Workflow Step Bar & Progress Cards
    ============================================================ */
