@@ -55,6 +55,14 @@ def _get_api_key():
     return os.environ.get("DEEPSEEK_API_KEY", "")
 
 
+# ===== Context Processor =====
+
+@app.context_processor
+def inject_globals():
+    offline = not os.environ.get('RAILWAY_ENV') and not os.environ.get('DEEPSEEK_API_KEY')
+    return {'offline_mode': offline}
+
+
 # ===== Page Routes =====
 
 @app.route("/")

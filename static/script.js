@@ -325,9 +325,40 @@ async function loadModels(retry = false) {
 
     renderModelGrid(allModels);
     updateModelCount(allModels.length);
+    injectStarterModels();
   } catch (e) {
     grid.innerHTML = `<p class="error-msg">加载失败 <button class="btn-sm" onclick="loadModels(true)">重试</button></p>`;
   }
+}
+
+var STARTER_MODELS = [
+  { name: '层次分析法 (AHP)', summary: '多准则决策，适合综合评价类问题', difficulty: '入门' },
+  { name: '线性回归', summary: '最基础的数据拟合方法，预测题首选', difficulty: '入门' },
+  { name: '蒙特卡洛模拟', summary: '随机模拟，处理不确定性问题的利器', difficulty: '简单' },
+];
+
+function injectStarterModels() {
+  var grid = document.getElementById('model-grid');
+  if (!grid || grid.querySelector('.starter-section')) return;
+  var section = document.createElement('div');
+  section.className = 'starter-section';
+  section.innerHTML = '<p class="starter-title">&#127891; 新手入门推荐</p><div class="starter-cards">' +
+    STARTER_MODELS.map(function(m) {
+      return '<div class="model-card starter-card" data-model="' + m.name + '" style="cursor:pointer">' +
+        '<h4>' + m.name + '</h4><p>' + m.summary + '</p>' +
+        '<span class="model-diff-tag">' + m.difficulty + '</span></div>';
+    }).join('') + '</div>';
+  grid.insertBefore(section, grid.firstChild);
+  // Click handler to filter to the starter model
+  section.querySelectorAll('.starter-card').forEach(function(card) {
+    card.addEventListener('click', function() {
+      var searchInput = document.getElementById('model-search');
+      if (searchInput) {
+        searchInput.value = this.dataset.model;
+        filterModels();
+      }
+    });
+  });
 }
 
 function getModelsFilters() {
@@ -755,6 +786,28 @@ function setButtonsLoading(btn, loading) {
 function mapProblemCategory(type) {
   const map = { A: '连续型', B: '离散型', C: '数据洞察', D: '网络科学', E: '可持续性', F: '政策研究' };
   return map[type] || '连续型';
+}
+
+// Try Example button
+var EXAMPLE_PROBLEM = '某沿海城市计划在未来 5 年内将可再生能源占比从 15% 提高到 40%。' +
+  '可供选择的能源类型包括：海上风电、光伏发电、生物质能。每种能源的建设成本、发电效率、占地面积和环境影响各不相同。' +
+  '请建立数学模型，确定最优的能源组合方案，使得在满足减排目标和 budget 约束下，总成本最小化。';
+
+var tryExampleBtn = document.getElementById('try-example-btn');
+if (tryExampleBtn) {
+  tryExampleBtn.addEventListener('click', function() {
+    document.getElementById('problem').value = EXAMPLE_PROBLEM;
+    document.getElementById('problem-type').value = 'E';
+    document.getElementById('contest-type').value = 'MCM/ICM';
+    showToast('已填入示例题目（可持续性 / E 题），点击生成即可体验');
+    if (window.Teammate) {
+      window.Teammate.fetchHint({
+        tab: 'generator', last_action: 'problem_filled',
+        problem_type: 'E', problem_text: EXAMPLE_PROBLEM,
+      });
+    }
+    document.getElementById('problem').scrollIntoView({ behavior: 'smooth' });
+  });
 }
 
 generateBtn.addEventListener('click', async () => {

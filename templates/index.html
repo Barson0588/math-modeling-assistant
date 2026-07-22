@@ -27,7 +27,7 @@
     </div>
     <button id="settings-btn" class="nav-btn settings-btn" title="设置">&#9881;</button>
     <button id="theme-toggle" class="theme-btn" title="切换深色模式">🌙</button>
-    <a href="/login" id="login-link" class="nav-login-link">登录</a>
+    {% if not offline_mode %}<a href="/login" id="login-link" class="nav-login-link">登录</a>{% endif %}
     <span id="user-menu" class="user-menu" hidden>
       <span id="user-email-display" class="user-email-display"></span>
       <button id="logout-btn" class="btn-sm logout-btn">退出</button>
@@ -102,7 +102,7 @@
     <!-- Problem input -->
     <div class="field">
       <label for="problem">竞赛题目</label>
-      <textarea id="problem" rows="4" placeholder="粘贴完整题目描述..."></textarea>
+      <textarea id="problem" rows="4" placeholder="粘贴完整题目描述...&#10;&#10;提示：没有题目？点击下方「试试示例」一键体验完整流程"></textarea>
     </div>
     <div class="field">
       <label for="requirements">具体要求 <span class="hint">（可选）</span></label>
@@ -114,6 +114,7 @@
         <span class="btn-text">生成论文方案</span>
         <span class="btn-loading" hidden><span class="spinner"></span>生成中（约 15-30 秒）...</span>
       </button>
+      <button id="try-example-btn" class="btn-secondary">试试示例</button>
       <button id="ai-report-btn" class="btn-secondary">
         <span class="btn-text">生成 AI 使用报告</span>
         <span class="btn-loading" hidden><span class="spinner"></span>生成中...</span>

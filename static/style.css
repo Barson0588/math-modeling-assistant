@@ -2503,3 +2503,28 @@ footer { text-align: center; padding: 24px; color: var(--text-secondary); font-s
   .step-arrow { display: none; }
   .step-dot { width: 24px; height: 24px; font-size: 11px; }
 }
+
+/* ============================================================
+   Starter Model Cards
+   ============================================================ */
+.starter-section {
+  margin-bottom: 20px; padding-bottom: 16px;
+  border-bottom: 2px dashed var(--border);
+}
+.starter-title {
+  font-size: 14px; font-weight: 600; color: var(--text-secondary);
+  margin-bottom: 10px;
+}
+.starter-cards {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+}
+.starter-card {
+  border: 2px dashed var(--accent) !important;
+  background: var(--accent-light, rgba(59, 130, 246, 0.05)) !important;
+  transition: border-color .2s, transform .2s;
+}
+.starter-card:hover {
+  border-color: var(--accent) !important;
+  transform: translateY(-2px);
+}
