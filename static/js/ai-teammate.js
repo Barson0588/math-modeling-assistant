@@ -1,13 +1,13 @@
 // AI Teammate — floating panel with auto role-switching, proactive hints, voice input
-// Now with drag-to-move, resize handle, welcome message, and preference persistence
+// Now with drag-to-move, resize handle, welcome message, markdown rendering, typing indicator
 (function() {
   const ROLE_CONFIG = {
-    generator: { name: '建模手', icon: '📐' },
-    paper: { name: '写作手', icon: '✍️' },
-    models: { name: '建模手', icon: '📐' },
-    problems: { name: '建模手', icon: '📐' },
-    guide: { name: '教练', icon: '🎯' },
-    roles: { name: '教练', icon: '🎯' },
+    generator: { name: '建模手', icon: '📐', persona: '建模手' },
+    paper: { name: '写作手', icon: '✍️', persona: '写作手' },
+    models: { name: '建模手', icon: '📐', persona: '建模手' },
+    problems: { name: '建模手', icon: '📐', persona: '建模手' },
+    guide: { name: '教练', icon: '🎯', persona: '教练' },
+    roles: { name: '教练', icon: '🎯', persona: '教练' },
   };
 
   const WELCOME_SHOWN_KEY = 'mma-teammate-welcome';
@@ -33,6 +33,9 @@
   // ---- Resize state ----
   let resizing = false, resizeStartX = 0, resizeStartY = 0, panelStartW = 0, panelStartH = 0;
 
+  // ---- Typing indicator ----
+  let typingEl = null;
+
   function updateRole(tabName) {
     const config = ROLE_CONFIG[tabName] || ROLE_CONFIG.generator;
     currentRole = tabName;
@@ -40,7 +43,6 @@
     if (roleName) roleName.textContent = config.name;
     if (btn) btn.querySelector('.teammate-avatar').textContent = config.icon;
 
-    // On tab switch, auto-fetch context hint
     const problemType = document.getElementById('problem-type')?.value || '';
     const problemText = document.getElementById('problem')?.value || '';
     if (tabName === 'models' || tabName === 'paper' || tabName === 'generator') {
@@ -52,24 +54,35 @@
     if (!text) return;
     const el = document.createElement('div');
     el.className = 'teammate-message role-' + (role === 'user' ? 'user' : 'teammate');
-    el.innerHTML = '<div class="msg-text">' + text + '</div>';
+
+    // Render markdown for teammate messages
+    if (role === 'teammate') {
+      try {
+        var rendered = typeof marked !== 'undefined' ? marked.parse(text) : text;
+        el.innerHTML = '<div class="msg-text">' + rendered + '</div>';
+      } catch(e) {
+        el.innerHTML = '<div class="msg-text">' + text + '</div>';
+      }
+    } else {
+      el.innerHTML = '<div class="msg-text">' + text + '</div>';
+    }
+
     if (actions && actions.length) {
       el.innerHTML += '<div class="msg-actions">' + actions.map(function(a) {
         return '<button class="msg-btn" data-payload="' + (a.payload || '') + '">' + (a.label || '') + '</button>';
       }).join('') + '</div>';
 
-      // Add click handlers for action buttons
       setTimeout(function() {
         el.querySelectorAll('.msg-btn').forEach(function(btn) {
           btn.addEventListener('click', function() {
-            var payload = this.dataset.payload;
-            handleAction(payload);
+            handleAction(this.dataset.payload);
           });
         });
       }, 50);
     }
+
     messagesEl.appendChild(el);
-    messagesEl.scrollTop = messagesEl.scrollHeight;
+    messagesEl.scrollTo({ top: messagesEl.scrollHeight, behavior: 'smooth' });
 
     if (!panelOpen && role !== 'user') {
       unreadCount++;
@@ -79,19 +92,38 @@
     return el;
   }
 
+  // ---- Typing indicator ----
+  function showTyping() {
+    if (typingEl) return;
+    typingEl = document.createElement('div');
+    typingEl.className = 'teammate-message role-teammate typing-indicator';
+    typingEl.innerHTML = '<div class="typing-dots"><span></span><span></span><span></span></div>';
+    messagesEl.appendChild(typingEl);
+    messagesEl.scrollTo({ top: messagesEl.scrollHeight, behavior: 'smooth' });
+  }
+
+  function hideTyping() {
+    if (typingEl) {
+      typingEl.classList.add('typing-done');
+      setTimeout(function() {
+        if (typingEl) { typingEl.remove(); typingEl = null; }
+      }, 150);
+    }
+  }
+
   function showWelcome() {
     var shown = sessionStorage.getItem(WELCOME_SHOWN_KEY);
     if (shown) return;
     sessionStorage.setItem(WELCOME_SHOWN_KEY, '1');
 
-    var config = ROLE_CONFIG[currentRole] || ROLE_CONFIG.generator;
     addMessage('teammate',
-      '👋 你好！我是你的 <b>AI 竞赛队友</b>，会根据当前页面自动切换角色：<br><br>' +
-      '📐 <b>建模手</b> — 在 Generator / Models 页面出现，帮你分析题目、推荐模型<br>' +
-      '✍️ <b>写作手</b> — 在 Paper 页面出现，帮你优化论文结构、精修摘要<br>' +
-      '🎯 <b>教练</b> — 在 Guide / Roles 页面出现，帮团队规划时间、检查进度<br><br>' +
-      '💡 <b>小技巧：</b>拖动标题栏可以移动面板，拖拽左下角可以调整大小，双击标题恢复默认。直接问我问题，我会调用 AI 帮你解答！',
-      [{ label: '知道了', payload: 'dismiss_welcome' }]
+      '👋 嘿！我是你的 **AI 竞赛队友**，不是客服机器人，是跟你并肩作战的搭档！\n\n' +
+      '我会根据页面自动切换角色：\n\n' +
+      '📐 **建模手** — Generator / Models 页面，一起分析题目、挑模型\n' +
+      '✍️ **写作手** — Paper 页面，帮你打磨论文、精修摘要\n' +
+      '🎯 **教练** — Guide / Roles 页面，盯着时间线、检查进度\n\n' +
+      '💡 **小技巧：** 拖标题栏能移动我，拖左下角能调大小，双击标题恢复默认。有啥问题直接问，咱们一起搞定！',
+      [{ label: '收到，开干！', payload: 'dismiss_welcome' }]
     );
   }
 
@@ -145,14 +177,16 @@
 
   async function fetchHint(context) {
     try {
+      showTyping();
       var res = await fetch('/api/context-hint', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(context),
       });
       var data = await res.json();
+      hideTyping();
       if (data.hint_text) addMessage('teammate', data.hint_text, data.actions);
-    } catch(e) {}
+    } catch(e) { hideTyping(); }
   }
 
   // ---- Drag to move ----
@@ -162,16 +196,14 @@
     headerEl.addEventListener('mousedown', onDragStart);
     document.addEventListener('mousemove', onDragMove);
     document.addEventListener('mouseup', onDragEnd);
-    // Touch support
     headerEl.addEventListener('touchstart', onDragStart, { passive: false });
     document.addEventListener('touchmove', onDragMove, { passive: false });
     document.addEventListener('touchend', onDragEnd);
-    // Double-click to reset
     headerEl.addEventListener('dblclick', resetPanelPosition);
   }
 
   function onDragStart(e) {
-    if (e.target.tagName === 'BUTTON') return; // Don't drag on close button
+    if (e.target.tagName === 'BUTTON') return;
     dragging = true;
     var clientX = e.touches ? e.touches[0].clientX : e.clientX;
     var clientY = e.touches ? e.touches[0].clientY : e.clientY;
@@ -192,13 +224,10 @@
     var dy = clientY - dragStartY;
     var newLeft = panelStartX + dx;
     var newTop = panelStartY + dy;
-
-    // Clamp to viewport
     var maxLeft = window.innerWidth - panel.offsetWidth - 8;
     var maxTop = window.innerHeight - panel.offsetHeight - 8;
     newLeft = Math.max(8, Math.min(newLeft, maxLeft));
     newTop = Math.max(8, Math.min(newTop, maxTop));
-
     panel.style.left = newLeft + 'px';
     panel.style.right = 'auto';
     panel.style.bottom = 'auto';
@@ -228,13 +257,11 @@
   // ---- Resize handle ----
   function initResize() {
     if (isMobile) return;
-    // Create resize handle
     var handle = document.createElement('div');
     handle.className = 'teammate-resize-handle';
     handle.title = '拖拽调整大小';
     handle.innerHTML = '↘';
     panel.appendChild(handle);
-
     handle.addEventListener('mousedown', onResizeStart);
     document.addEventListener('mousemove', onResizeMove);
     document.addEventListener('mouseup', onResizeEnd);
@@ -287,7 +314,6 @@
       width: panel.style.width || '',
       height: panel.style.height || '',
     };
-    // Only save if user actually moved/resized
     if (!prefs.left && !prefs.top && !prefs.width) return;
     localStorage.setItem(PANEL_PREF_KEY, JSON.stringify(prefs));
   }
@@ -323,27 +349,34 @@
     if (!text) return;
     addMessage('user', text);
     inputEl.value = '';
+    inputEl.disabled = true;
+
+    showTyping();
 
     try {
       var res = await fetch('/api/explain', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ section_title: '用户提问', section_content: text }),
+        body: JSON.stringify({ section_title: '队友提问', section_content: text }),
       });
       var data = await res.json();
+      hideTyping();
       if (data.content) {
         addMessage('teammate', data.content, []);
       } else {
-        addMessage('teammate', '抱歉，生成失败：' + (data.error || '未知错误'), []);
+        addMessage('teammate', '😅 抱歉，出错了：' + (data.error || '未知错误'), []);
       }
     } catch(e) {
-      addMessage('teammate', '网络错误，请检查连接后重试', []);
+      hideTyping();
+      addMessage('teammate', '😅 网络好像不太行，稍等再试试？', []);
     }
+    inputEl.disabled = false;
+    inputEl.focus();
   }
 
   document.getElementById('teammate-send').addEventListener('click', sendMessage);
   inputEl.addEventListener('keydown', function(e) {
-    if (e.key === 'Enter') sendMessage();
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
   });
 
   // ---- Voice Input (mobile only) ----

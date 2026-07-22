@@ -2482,7 +2482,7 @@ footer { text-align: center; padding: 24px; color: var(--text-secondary); font-s
    AI Teammate Panel
    ============================================================ */
 .teammate-float-btn {
-  position: fixed; bottom: 24px; right: 24px; z-index: 1000;
+  position: fixed; bottom: 24px; right: 24px; z-index: 190;
   width: 56px; height: 56px; border-radius: 50%; border: none;
   background: var(--accent); color: #fff; font-size: 24px;
   cursor: pointer; box-shadow: var(--shadow-lg);
@@ -2501,7 +2501,7 @@ footer { text-align: center; padding: 24px; color: var(--text-secondary); font-s
 }
 
 .teammate-panel {
-  position: fixed; bottom: 92px; right: 24px; z-index: 999;
+  position: fixed; bottom: 92px; right: 24px; z-index: 189;
   width: 380px; max-height: 520px;
   background: linear-gradient(180deg, var(--surface) 0%, color-mix(in srgb, var(--surface) 97%, var(--bg)) 100%);
   border: 1px solid var(--border); border-radius: var(--radius);
@@ -2536,7 +2536,50 @@ footer { text-align: center; padding: 24px; color: var(--text-secondary); font-s
   font-size: 13px; line-height: 1.55; animation: msgIn .2s ease-out;
   word-break: break-word;
 }
-@keyframes msgIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes msgIn { from { opacity: 0; transform: translateY(12px) scale(0.97); } to { opacity: 1; transform: translateY(0) scale(1); } }
+
+/* Typing indicator */
+.typing-dots { display: flex; gap: 4px; padding: 4px 2px; align-items: center; }
+.typing-dots span {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--text-secondary); opacity: 0.3;
+  animation: typingBounce 1.4s ease-in-out infinite;
+}
+.typing-dots span:nth-child(1) { animation-delay: 0s; }
+.typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+.typing-dots span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes typingBounce {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.3; }
+  30% { transform: translateY(-6px); opacity: 0.8; }
+}
+.typing-indicator.typing-done { animation: typingFadeOut .15s ease forwards; }
+@keyframes typingFadeOut { to { opacity: 0; transform: scale(0.95); } }
+
+/* Markdown rendered content inside teammate messages */
+.teammate-message.role-teammate .msg-text p { margin: 0 0 6px; }
+.teammate-message.role-teammate .msg-text p:last-child { margin-bottom: 0; }
+.teammate-message.role-teammate .msg-text strong { font-weight: 700; }
+.teammate-message.role-teammate .msg-text em { font-style: italic; }
+.teammate-message.role-teammate .msg-text ul,
+.teammate-message.role-teammate .msg-text ol { margin: 4px 0; padding-left: 18px; }
+.teammate-message.role-teammate .msg-text li { margin-bottom: 2px; }
+.teammate-message.role-teammate .msg-text code {
+  background: var(--inline-code-bg); padding: 1px 5px; border-radius: 3px;
+  font-family: var(--mono); font-size: 12px;
+}
+.teammate-message.role-teammate .msg-text pre {
+  background: var(--pre-bg); color: var(--pre-color);
+  padding: 10px 14px; border-radius: var(--radius-sm);
+  overflow-x: auto; margin: 6px 0; font-size: 12px;
+}
+.teammate-message.role-teammate .msg-text pre code { background: none; padding: 0; }
+.teammate-message.role-teammate .msg-text h1,
+.teammate-message.role-teammate .msg-text h2,
+.teammate-message.role-teammate .msg-text h3 { font-size: 14px; font-weight: 700; margin: 8px 0 4px; }
+.teammate-message.role-teammate .msg-text blockquote {
+  border-left: 3px solid var(--accent); padding-left: 10px;
+  margin: 6px 0; color: var(--text-secondary);
+}
 .teammate-message.role-teammate {
   background: var(--inline-code-bg); align-self: flex-start;
   border-bottom-left-radius: 4px; color: var(--text);
