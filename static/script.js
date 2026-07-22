@@ -821,6 +821,11 @@ generateBtn.addEventListener('click', async () => {
             msgLines = [];
             if (data === '[DONE]') continue;
             if (data.startsWith('[ERROR]')) { errorOccurred = true; throw new Error(data.slice(8)); }
+            if (data.startsWith('[STAGE:')) {
+              var stageName = data.slice(7, -1);
+              updateProgressStage('gen-stages', stageName);
+              continue;
+            }
             fullContent += data;
             chunkCount++;
             if (stageEl) stageEl.innerHTML = '<span class="stage-dot"></span>' + detectStage(fullContent);
@@ -836,6 +841,8 @@ generateBtn.addEventListener('click', async () => {
       }
     }
 
+    // Mark all stages done
+    finishAllStages('gen-stages');
     // Final render
     resultContent.innerHTML = marked.parse(fullContent);
     injectCodeCopyButtons(resultContent);
@@ -1056,7 +1063,10 @@ paperGenerateBtn.addEventListener('click', async () => {
 
   setButtonsLoading(paperGenerateBtn, true);
   paperResult.classList.add('visible');
-  paperContent.innerHTML = '<div class="stage-indicator"><span class="stage-dot"></span>准备中...<button class="btn-sm cancel-gen-btn" id="paper-cancel-btn">取消</button></div>';
+  paperContent.innerHTML = '<div class="progress-card" id="paper-progress-card">' +
+    '<div class="progress-header"><span class="progress-title">生成进度</span></div>' +
+    '<div class="progress-stages" id="paper-stages"></div></div>' +
+    '<div class="stage-indicator"><span class="stage-dot"></span>准备中...<button class="btn-sm cancel-gen-btn" id="paper-cancel-btn">取消</button></div>';
   paperResultLabel.textContent = '论文预览';
   paperResult.scrollIntoView({ behavior: 'smooth' });
   document.getElementById('paper-cancel-btn').addEventListener('click', () => {
@@ -1103,6 +1113,11 @@ paperGenerateBtn.addEventListener('click', async () => {
             msgLines = [];
             if (data === '[DONE]') continue;
             if (data.startsWith('[ERROR]')) { errorOccurred = true; throw new Error(data.slice(8)); }
+            if (data.startsWith('[STAGE:')) {
+              var stageName = data.slice(7, -1);
+              updateProgressStage('paper-stages', stageName);
+              continue;
+            }
             fullContent += data;
             chunkCount++;
             if (stageEl) stageEl.innerHTML = '<span class="stage-dot"></span>' + detectStage(fullContent);
@@ -1117,6 +1132,7 @@ paperGenerateBtn.addEventListener('click', async () => {
       }
     }
 
+    finishAllStages('paper-stages');
     paperContent.innerHTML = marked.parse(fullContent);
     injectCodeCopyButtons(paperContent);
     injectDisclaimer(paperContent);
@@ -2060,6 +2076,61 @@ document.getElementById('print-btn').addEventListener('click', () => {
 });
 
 // Keyboard shortcuts handled in unified handler above (line ~330)
+
+// ============================================================
+// Progress Stage Helpers — update progress card during SSE streaming
+// ============================================================
+var STAGE_ICONS = {
+  '分析题目类型': '&#128269;', '匹配合适模型': '&#128218;', '构建论文框架': '&#128208;',
+  '撰写假设与符号说明': '&#9999;', '生成 Python 代码': '&#128187;', '生成敏感性分析': '&#128202;',
+  '撰写摘要': '&#128221;', '引言与问题重述': '&#128220;', '模型建立': '&#128295;',
+  '模型求解': '&#128291;', '结果分析': '&#128200;', '结论与参考文献': '&#128214;',
+};
+
+function updateProgressStage(containerId, stageName) {
+  var container = document.getElementById(containerId);
+  if (!container) return;
+  // Mark previous in-progress as done
+  var prev = container.querySelector('.progress-stage.in-progress');
+  if (prev) {
+    prev.classList.remove('in-progress');
+    prev.classList.add('done');
+    var checkEl = prev.querySelector('.stage-check');
+    if (!checkEl) {
+      checkEl = document.createElement('span');
+      checkEl.className = 'stage-check';
+      checkEl.innerHTML = '&#10003;';
+      prev.appendChild(checkEl);
+    }
+    var spinEl = prev.querySelector('.stage-spinner');
+    if (spinEl) spinEl.remove();
+  }
+  // Add new stage
+  var icon = STAGE_ICONS[stageName] || '&#10227;';
+  var row = document.createElement('div');
+  row.className = 'progress-stage in-progress';
+  row.dataset.stage = stageName;
+  row.innerHTML = '<span class="stage-icon">' + icon + '</span> ' + stageName + ' <span class="stage-spinner"></span>';
+  container.appendChild(row);
+}
+
+function finishAllStages(containerId) {
+  var container = document.getElementById(containerId);
+  if (!container) return;
+  var all = container.querySelectorAll('.progress-stage');
+  all.forEach(function(row) {
+    row.classList.remove('in-progress');
+    row.classList.add('done');
+    var spinEl = row.querySelector('.stage-spinner');
+    if (spinEl) spinEl.remove();
+    if (!row.querySelector('.stage-check')) {
+      var checkEl = document.createElement('span');
+      checkEl.className = 'stage-check';
+      checkEl.innerHTML = '&#10003;';
+      row.appendChild(checkEl);
+    }
+  });
+}
 
 // ============================================================
 // Stage Detection — parse streaming content for current section

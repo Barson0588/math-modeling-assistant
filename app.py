@@ -239,9 +239,15 @@ def generate_stream_endpoint():
 
     def generate():
         try:
+            # Yield stage markers so frontend can show progress cards
+            stages = [
+                "分析题目类型", "匹配合适模型", "构建论文框架",
+                "撰写假设与符号说明", "生成 Python 代码", "生成敏感性分析",
+            ]
+            for s in stages:
+                yield f"data: [STAGE:{s}]\n\n"
+
             for chunk in generate_stream(system_prompt, user_prompt, api_key=_get_api_key()):
-                # Proper SSE framing: each line of the chunk gets its own "data:" prefix.
-                # Empty line (\n\n) marks end of one SSE message.
                 for line in chunk.split('\n'):
                     yield f"data: {line}\n"
                 yield '\n'
@@ -298,6 +304,13 @@ def generate_paper_stream_endpoint():
 
     def generate():
         try:
+            stages = [
+                "撰写摘要", "引言与问题重述", "模型建立",
+                "模型求解", "结果分析", "敏感性分析", "结论与参考文献",
+            ]
+            for s in stages:
+                yield f"data: [STAGE:{s}]\n\n"
+
             for chunk in generate_stream(system_prompt, user_prompt, max_tokens=12000, api_key=_get_api_key()):
                 for line in chunk.split('\n'):
                     yield f"data: {line}\n"
