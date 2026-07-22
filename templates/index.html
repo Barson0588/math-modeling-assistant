@@ -14,6 +14,36 @@
 </head>
 <body>
 
+<!-- MMA Welcome Screen -->
+<div id="mma-welcome" class="mma-welcome">
+  <div class="mma-welcome-blobs">
+    <div class="mma-blob blob-1"></div>
+    <div class="mma-blob blob-2"></div>
+    <div class="mma-blob blob-3"></div>
+    <div class="mma-blob blob-4"></div>
+  </div>
+  <div class="mma-welcome-glass">
+    <h1 class="mma-welcome-title">MMA</h1>
+    <p class="mma-welcome-subtitle">数学建模 · 智能辅助 · 从选题到成稿</p>
+    <p class="mma-welcome-hint">点击任意位置开始</p>
+  </div>
+</div>
+<script>
+(function() {
+  var welcome = document.getElementById('mma-welcome');
+  var shown = sessionStorage.getItem('mma-welcome-shown');
+  if (shown) {
+    welcome.remove();
+  } else {
+    sessionStorage.setItem('mma-welcome-shown', '1');
+    welcome.addEventListener('click', function() {
+      welcome.classList.add('dismissing');
+      setTimeout(function() { welcome.remove(); }, 500);
+    });
+  }
+})();
+</script>
+
 <nav class="nav">
   <div class="nav-inner">
     <a href="#" class="logo">MMA</a>
@@ -433,11 +463,8 @@
 </button>
 
 <div id="teammate-panel" class="teammate-panel" hidden>
-  <div class="teammate-header">
-    <span id="teammate-role-icon">📐</span>
-    <span id="teammate-role-name">建模手</span>
-    <button id="teammate-close" class="teammate-close">&times;</button>
-  </div>
+  <div id="teammate-drag-bar" class="teammate-drag-bar" title="拖拽移动 · 双击复位"></div>
+  <div id="teammate-collapse-bar" class="teammate-collapse-bar" hidden></div>
   <div id="teammate-messages" class="teammate-messages"></div>
   <div class="teammate-input-row">
     <button id="teammate-mic-btn" class="teammate-mic-btn" title="语音输入" hidden>🎤</button>
@@ -450,7 +477,10 @@
   <p>Math Modeling Assistant &middot; Powered by DeepSeek &middot; For MCM/ICM & CUMCM <span class="shortcuts-hint" title="键盘快捷键" onclick="showShortcuts()">?</span></p>
 </footer>
 
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 <script>
 // ===== Auth: Login Modal, Account Panel, Guidance Hints =====

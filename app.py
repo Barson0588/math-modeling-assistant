@@ -20,7 +20,7 @@ from src.llm_client import generate_response, generate_stream
 from src.models_data import MODELS
 from src.problems_data import PROBLEMS
 from src.guide_data import GUIDE
-from src.scholar import search_by_keywords, format_references_apa
+from src.scholar import search_by_keywords, search_papers, format_reference_apa, format_references_apa
 from src.auth import auth_bp, get_current_user, decrypt_api_key
 from src.db import init_db
 
@@ -53,6 +53,16 @@ def _get_api_key():
             return key
     # Fallback: local .env for desktop builds
     return os.environ.get("DEEPSEEK_API_KEY", "")
+
+
+def _strip_code_fences(text):
+    """Remove markdown code fences from AI-generated text that wraps content in ``` or ```text blocks."""
+    import re
+    text = text.strip()
+    # Remove leading ```text or ```language and trailing ```
+    text = re.sub(r'^```(?:text|markdown|plain|md)?\s*\n', '', text)
+    text = re.sub(r'\n```\s*$', '', text)
+    return text.strip()
 
 
 # ===== Context Processor =====
@@ -476,6 +486,56 @@ def generate_paper_latex():
 
 # ===== API: Reference Verification =====
 
+def _extract_title_for_search(ref_text):
+    """Extract a meaningful search query from a reference string for Semantic Scholar."""
+    import re
+    # Try to extract the paper title — typically between authors and journal/volume
+    # Patterns: "Author (Year). Title. Journal." or "Author, Title, Journal, Year"
+
+    # Remove bracketed numbers at start
+    cleaned = re.sub(r'^\[\d+\]\s*', '', ref_text)
+
+    # Strategy 1: Look for quoted title
+    quoted = re.findall(r'[""]([^""]{20,})[""]', cleaned)
+    if quoted:
+        return quoted[0][:150]
+
+    # Strategy 2: Extract between year and the journal info
+    # "Author. (2020). Title of the paper. Journal Name, 10(2), 100-120."
+    year_match = re.search(r'\((\d{4})\)', cleaned)
+    if year_match:
+        after_year = cleaned[year_match.end():].strip()
+        # The title is typically between the year and the journal name
+        # Split by "Journal" or "In:" or "Vol." or by the pattern ", 10(" which indicates volume
+        title_parts = re.split(
+            r'(?:[Jj]ournal|[Vv]ol\.?\s*\d|pp?\.\s*\d|In:\s|Proceedings of|'
+            r'[A-Z][a-z]+,\s*\d+\(\d+\)|,\s*\d+\(\d+\))',
+            after_year, maxsplit=1
+        )
+        candidate = title_parts[0].strip().rstrip('.').strip()
+        if len(candidate) >= 20:
+            return candidate[:150]
+
+    # Strategy 3: Find the longest segment between periods (likely the title)
+    segments = [s.strip() for s in cleaned.split('.') if len(s.strip()) > 15]
+    if segments:
+        # Skip author name segments (typically short, with commas)
+        candidates = [s for s in segments if ',' not in s or len(s) > 40]
+        if candidates:
+            return max(candidates, key=len)[:150]
+
+    # Strategy 4: Remove author patterns and take the remaining text
+    # "Last, F., Last, F. (year)." → remove this prefix
+    author_stripped = re.sub(
+        r'^[A-Z][a-z]+,\s*[A-Z]\.(?:\s*,\s*[A-Z]\.)*\s*(?:and\s+[A-Z][a-z]+,\s*[A-Z]\.)?\s*(?:\(\d{4}\)\.?)?\s*',
+        '', cleaned, count=1
+    ).strip()
+    if len(author_stripped) > 30:
+        return author_stripped[:150]
+
+    return cleaned[:150]
+
+
 @app.route("/api/verify-references", methods=["POST"])
 def verify_references():
     data = request.get_json()
@@ -484,49 +544,69 @@ def verify_references():
     if not content:
         return jsonify({"error": "请提供论文内容"}), 400
 
-    # Extract potential reference lines (numbered references like [1] ..., or APA-style)
     import re
+
+    # Extract reference section — look for "References" / "参考文献" header
+    ref_section = content
+    ref_header = re.search(
+        r'(?:^|\n)#{1,3}\s*(?:References?|参考文献|Bibliography|Works?\s*Cited)\s*\n',
+        content, re.IGNORECASE
+    )
+    if ref_header:
+        ref_section = content[ref_header.end():]
+
+    # Extract individual references
     ref_patterns = [
         r'\[(\d+)\]\s+(.+?)(?=\[\d+\]|\Z)',  # [1] Author. Title...
-        r'^\d+\.\s+(.+?)(?=\n\d+\.|\Z)',      # 1. Author. Title...
+        r'^\d+\.\s+(.+?)(?=\n\d+\.\s|\Z)',    # 1. Author. Title...
     ]
-    refs_found = []
+    refs_found = []  # list of (ref_number, ref_text)
     for pattern in ref_patterns:
-        matches = re.findall(pattern, content, re.DOTALL | re.MULTILINE)
+        matches = re.findall(pattern, ref_section, re.DOTALL | re.MULTILINE)
         for match in matches:
-            ref_text = (match[1] if isinstance(match, tuple) else match).strip()
-            if len(ref_text) > 30:
-                refs_found.append(ref_text[:300])
+            num, text = (match[0], match[1]) if isinstance(match, tuple) else (str(len(refs_found) + 1), match)
+            if len(text.strip()) > 30:
+                refs_found.append((num, text.strip()[:300]))
 
     if not refs_found:
         return jsonify({"error": "未在论文中找到参考文献"}), 400
 
-    # Search first 3 references against Semantic Scholar (keep it responsive)
+    # Search all references, but be responsive
     results = []
-    for ref in refs_found[:3]:
-        # Extract likely title (first sentence or quoted text)
-        title_guess = ref.split('.')[0].strip() if '.' in ref else ref[:100]
-        # Remove author names for cleaner search
-        title_guess = re.sub(r'^[A-Z][a-z]+,\s+[A-Z]\.', '', title_guess).strip()
-        if len(title_guess) < 15:
-            title_guess = ref[:100]
+    fake_count = 0
+    for ref_num, ref_text in refs_found:
+        # Smart title extraction for better Semantic Scholar matching
+        search_query = _extract_title_for_search(ref_text)
 
-        papers = search_by_keywords([title_guess], limit=3)
+        papers = search_by_keywords([search_query], limit=5)
         if papers:
             best = papers[0]
-            results.append({
-                "original": ref[:200],
-                "status": "verified" if best.get("title") else "not_found",
+            # Consider verified if title similarity or citation count is substantial
+            verified = best.get("citationCount", 0) > 0 or len(best.get("title", "")) > 20
+            result = {
+                "ref_num": ref_num,
+                "original": ref_text[:200],
+                "status": "verified",
                 "match_title": best.get("title", ""),
                 "match_authors": best.get("authors", []),
                 "match_year": best.get("year"),
                 "match_citations": best.get("citationCount", 0),
                 "match_doi": best.get("doi", ""),
                 "match_url": best.get("url", ""),
-            })
+                "match_apa": format_reference_apa(best),
+                "alternatives": [
+                    format_reference_apa(p) for p in papers[1:3]
+                ] if papers[1:] else [],
+            }
+            results.append(result)
         else:
+            fake_count += 1
+            # Try broader search for alternative real references
+            fallback_query = search_query[:80]
+            alt_papers = search_papers(fallback_query, limit=3) if len(fallback_query) > 20 else []
             results.append({
-                "original": ref[:200],
+                "ref_num": ref_num,
+                "original": ref_text[:200],
                 "status": "not_found",
                 "match_title": "",
                 "match_authors": [],
@@ -534,14 +614,25 @@ def verify_references():
                 "match_citations": 0,
                 "match_doi": "",
                 "match_url": "",
+                "match_apa": "",
+                "suggested_replacements": [
+                    {
+                        "apa": format_reference_apa(p),
+                        "title": p.get("title", ""),
+                        "citationCount": p.get("citationCount", 0),
+                        "year": p.get("year"),
+                    }
+                    for p in alt_papers
+                ] if alt_papers else [],
             })
 
     verified = sum(1 for r in results if r["status"] == "verified")
     return jsonify({
         "total": len(results),
         "verified": verified,
-        "fake": len(results) - verified,
+        "fake": fake_count,
         "results": results,
+        "ref_section_start": ref_header.start() if ref_header else -1,
     })
 
 
@@ -675,6 +766,7 @@ Please provide the complete rewritten paper that says the same thing differently
 
     try:
         result = generate_response(SYSTEM_DEDUP, user_prompt, max_tokens=3000, api_key=_get_api_key())
+        result = _strip_code_fences(result)
         return jsonify({"content": result, "mode": mode})
     except Exception as e:
         return jsonify({"error": f"降重改写失败: {str(e)}"}), 500

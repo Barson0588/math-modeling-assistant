@@ -101,13 +101,10 @@ body::before {
     radial-gradient(circle at 80% 20%, var(--purple-light) 0%, transparent 40%),
     radial-gradient(circle at 50% 80%, var(--accent-glow) 0%, transparent 50%);
   background-size: 100% 100%;
-  animation: bgShift 20s ease infinite alternate;
+  /* animation removed for performance */
   opacity: 0.6;
 }
-@keyframes bgShift {
-  0% { background-position: 0% 0%, 100% 0%, 50% 100%; }
-  100% { background-position: 100% 0%, 0% 100%, 50% 0%; }
-}
+/* bgShift keyframes removed */
 
 /* ============================================================
    Nav — glass morphism
@@ -201,7 +198,7 @@ main { max-width: 960px; margin: 0 auto; padding: 32px 24px 64px; }
   background-size: 200% auto;
   -webkit-background-clip: text; -webkit-text-fill-color: transparent;
   background-clip: text;
-  animation: heroShimmer 4s ease infinite;
+  animation: heroShimmer 4s ease 1;
 }
 @keyframes heroShimmer {
   0%, 100% { background-position: 0% center; }

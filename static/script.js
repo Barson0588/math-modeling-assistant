@@ -2956,13 +2956,17 @@ function replaceWithDedup(btn) {
   const resultContent = getActiveContent();
   if (!resultContent) return;
 
-  if (editModeActive) {
+  if (_dedupMode === 'flagged') {
+    // Targeted mode: extract rewritten passages and apply only those changes
+    applyTargetedDedup(resultContent, rewrittenContent);
+  } else if (editModeActive) {
     const textarea = document.getElementById('edit-textarea');
     if (textarea) {
       textarea.value = rewrittenContent;
-      showToast(_dedupMode === 'flagged' ? '已应用针对性修改到编辑区' : '已替换编辑区内容');
+      showToast('已替换编辑区内容');
     }
   } else {
+    // Full mode: replace entire content but preserve paper-page wrapper
     resultContent.innerHTML = marked.parse(rewrittenContent);
     injectCodeCopyButtons(resultContent);
     injectDisclaimer(resultContent);
@@ -2970,11 +2974,122 @@ function replaceWithDedup(btn) {
     injectExplainButtons(resultContent);
     buildTOC(resultContent);
     injectDataSourceHighlights(resultContent);
-    const msg = _dedupMode === 'flagged'
-      ? '已应用修改 — 仅高风险段落被改写，其余内容保持原文'
-      : '已替换为全文降重版本';
-    showToast(msg);
+    showToast('已替换为全文降重版本');
   }
+}
+
+// Smart targeted dedup: only replace flagged paragraphs, keep rest intact
+function applyTargetedDedup(resultContent, rewrittenFull) {
+  var originalHTML = resultContent.innerHTML;
+  var originalText = resultContent.innerText;
+  var rewrittenText = rewrittenFull;
+
+  // Strategy: split rewritten text into paragraphs, find matching originals via similarity,
+  // and replace only the changed ones in the DOM
+  var rewrittenParas = rewrittenText.split(/\n\n+/).filter(function(p) { return p.trim().length > 60; });
+  var originalParas = originalText.split(/\n\n+/).filter(function(p) { return p.trim().length > 60; });
+
+  if (rewrittenParas.length === 0) {
+    // Fallback: can't parse, do full replacement
+    resultContent.innerHTML = marked.parse(rewrittenFull);
+    showToast('已应用降重（全文替换）');
+    return;
+  }
+
+  var replaced = 0;
+  var newHTML = originalHTML;
+
+  // For each potentially rewritten paragraph, find its original and replace in DOM
+  for (var i = 0; i < Math.min(rewrittenParas.length, originalParas.length); i++) {
+    var orig = originalParas[i].trim();
+    var rewritten = rewrittenParas[i].trim();
+
+    // Skip if effectively same (minor changes only)
+    if (orig === rewritten || levenshteinRatio(orig, rewritten) > 0.9) continue;
+
+    // Escape for safe regex replacement in HTML
+    var escaped = orig.slice(0, 150).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    // Try to replace in HTML context
+    var before = newHTML;
+    newHTML = safeReplaceInHTML(newHTML, orig, rewritten);
+    if (newHTML !== before) replaced++;
+  }
+
+  if (replaced > 0) {
+    resultContent.innerHTML = newHTML;
+    injectCodeCopyButtons(resultContent);
+    injectDisclaimer(resultContent);
+    injectVerificationChecklist(resultContent);
+    injectExplainButtons(resultContent);
+    buildTOC(resultContent);
+    injectDataSourceHighlights(resultContent);
+    showToast('已应用针对性修改 — ' + replaced + ' 处高风险段落已改写，其余内容保持不变');
+  } else {
+    // Fallback: couldn't apply targeted changes, do full replace
+    resultContent.innerHTML = marked.parse(rewrittenFull);
+    showToast('已应用降重（全文替换 — 无法定位单独段落）');
+  }
+}
+
+// Safely replace text in HTML content without breaking tags/attributes
+function safeReplaceInHTML(html, oldText, newText) {
+  // Create a temporary DOM element to work with text nodes
+  var temp = document.createElement('div');
+  temp.innerHTML = html;
+
+  var walker = document.createTreeWalker(temp, NodeFilter.SHOW_TEXT, null, false);
+  var textNode;
+  while (textNode = walker.nextNode()) {
+    var idx = textNode.textContent.indexOf(oldText.slice(0, 120));
+    if (idx >= 0) {
+      // Found matching text node — replace the overlapping portion
+      var originalFull = textNode.textContent;
+      // Find best matching region
+      var bestMatch = findBestMatchingRegion(originalFull, oldText);
+      if (bestMatch) {
+        textNode.textContent = originalFull.substring(0, bestMatch.start) +
+          newText + originalFull.substring(bestMatch.end);
+        return temp.innerHTML;
+      }
+    }
+  }
+  return html; // No match found, return unchanged
+}
+
+function findBestMatchingRegion(fullText, searchText) {
+  var searchWords = searchText.split(/\s+/).slice(0, 8);
+  for (var i = 0; i < searchWords.length - 3; i++) {
+    var phrase = searchWords.slice(i, i + 4).join(' ');
+    var idx = fullText.indexOf(phrase);
+    if (idx >= 0) {
+      return { start: idx, end: idx + phrase.length };
+    }
+  }
+  return null;
+}
+
+function levenshteinRatio(a, b) {
+  if (!a || !b) return 0;
+  if (a === b) return 1;
+  var longer = a.length > b.length ? a : b;
+  var shorter = a.length > b.length ? b : a;
+  if (longer.length === 0) return 1;
+  return (longer.length - editDistance(longer, shorter)) / longer.length;
+}
+
+function editDistance(a, b) {
+  if (a.length === 0) return b.length;
+  if (b.length === 0) return a.length;
+  var matrix = [];
+  for (var i = 0; i <= b.length; i++) matrix[i] = [i];
+  for (var j = 0; j <= a.length; j++) matrix[0][j] = j;
+  for (var i = 1; i <= b.length; i++) {
+    for (var j = 1; j <= a.length; j++) {
+      if (b.charAt(i-1) === a.charAt(j-1)) matrix[i][j] = matrix[i-1][j-1];
+      else matrix[i][j] = Math.min(matrix[i-1][j-1]+1, matrix[i][j-1]+1, matrix[i-1][j]+1);
+    }
+  }
+  return matrix[b.length][a.length];
 }
 
 async function runReferenceCheck() {
@@ -2983,7 +3098,7 @@ async function runReferenceCheck() {
   const text = resultContent ? resultContent.innerText : '';
   if (!text.trim()) { showToast('没有可验证的内容'); return; }
 
-  showSidebar('引用验证');
+  showSidebar('引用验证 & 去幻觉');
   btn.innerHTML = '⏳ 验证中...'; btn.disabled = true;
   try {
     const res = await fetch('/api/verify-references', {
@@ -2994,20 +3109,134 @@ async function runReferenceCheck() {
     if (data.error) {
       updateSidebarContent(`<p class="error-msg">${escapeHtml(data.error)}</p>`);
     } else {
-      updateSidebarContent(`<h3>引用验证报告</h3>
+      // Store full results for replacement operations
+      document.getElementById('sidebar-body').dataset.refResults = JSON.stringify(data.results);
+
+      var html = `<h3>引用验证报告</h3>
         <div class="verify-summary">
           <span class="verify-stat verified">✓ ${data.verified} 条已验证</span>
           <span class="verify-stat fake">✗ ${data.fake} 条未找到</span>
-        </div>
-        ${data.results.map(r => `
-          <div class="verify-ref-item ${r.status}">
-            <div class="verify-ref-status">${r.status === 'verified' ? '✓ 已验证' : '✗ 未找到匹配'}</div>
-            <div class="verify-ref-original"><strong>原文:</strong> ${escapeHtml(r.original).slice(0, 150)}</div>
-            ${r.status === 'verified' ? `<div class="verify-ref-match"><strong>匹配:</strong> ${escapeHtml(r.match_title)}</div>` : '<div class="verify-ref-match"><strong>建议:</strong> 此引用可能为 AI 生成，请手动检索真实文献替换</div>'}
-          </div>`).join('')}`);
+        </div>`;
+
+      if (data.fake > 0) {
+        html += `<div class="dedup-action-bar" style="margin-bottom:12px">
+          <button class="btn-sm dedup-btn" onclick="replaceFakeReferences()" style="background:var(--accent);color:#fff;border:none">
+            一键替换 ${data.fake} 条幻觉引用为真实文献
+          </button>
+          <span class="dedup-hint">RAG 搜索 Semantic Scholar 真实文献替换</span>
+        </div>`;
+      }
+
+      data.results.forEach(function(r, i) {
+        var statusIcon = r.status === 'verified' ? '✓' : '✗';
+        var statusClass = r.status === 'verified' ? 'verified' : 'fake';
+        html += '<div class="verify-ref-item ' + statusClass + '">' +
+          '<div class="verify-ref-status">' + statusIcon + ' [' + r.ref_num + '] ' + (r.status === 'verified' ? '已验证' : '未找到匹配 — 疑似幻觉') + '</div>' +
+          '<div class="verify-ref-original"><strong>原文:</strong> ' + escapeHtml(r.original).slice(0, 150) + '</div>';
+
+        if (r.status === 'verified') {
+          html += '<div class="verify-ref-match"><strong>匹配:</strong> ' + escapeHtml(r.match_apa).slice(0, 200) + '</div>';
+        } else if (r.suggested_replacements && r.suggested_replacements.length > 0) {
+          html += '<div class="verify-ref-match" style="color:var(--green)"><strong>建议替换为:</strong></div>';
+          r.suggested_replacements.forEach(function(s) {
+            html += '<div class="verify-ref-suggestion" style="padding:8px 12px;margin:4px 0;background:var(--inline-code-bg);border-radius:6px;font-size:12px;cursor:pointer" ' +
+              'onclick="replaceSingleRef(' + i + ', \'' + escapeHtml(s.apa).replace(/'/g, "\\'") + '\')" title="点击替换此引用">' +
+              '📚 ' + escapeHtml(s.apa).slice(0, 200) +
+              (s.citationCount ? ' <span style="color:var(--text-secondary)">(被引 ' + s.citationCount + ' 次)</span>' : '') +
+              '</div>';
+          });
+        }
+        html += '</div>';
+      });
+
+      updateSidebarContent(html);
     }
   } catch (e) { updateSidebarContent('<p class="error-msg">引用验证失败</p>'); }
   finally { btn.innerHTML = '📚 验证引用'; btn.disabled = false; }
+}
+
+// Replace all fake references with real ones from Semantic Scholar
+function replaceFakeReferences() {
+  var sidebarBody = document.getElementById('sidebar-body');
+  var raw = sidebarBody.dataset.refResults || '';
+  if (!raw) { showToast('请先运行引用验证'); return; }
+
+  var results;
+  try { results = JSON.parse(raw); } catch(e) { return; }
+
+  var resultContent = getActiveContent();
+  if (!resultContent) return;
+  var originalHTML = resultContent.innerHTML;
+
+  var replaced = 0;
+  results.forEach(function(r) {
+    if (r.status !== 'not_found') return;
+    // Find best suggested replacement
+    var best = (r.suggested_replacements && r.suggested_replacements.length > 0)
+      ? r.suggested_replacements[0].apa : null;
+    if (!best) return;
+
+    // Escape the original text for regex, then replace in HTML
+    var escapedOrig = r.original.slice(0, 120).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    var pattern = new RegExp('\\[' + r.ref_num + '\\]\\s*' + escapedOrig.split(' ').slice(0, 6).join('\\s+').replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '[^\\[]*', 'i');
+    var newHTML = originalHTML.replace(pattern, '[' + r.ref_num + '] ' + best);
+    if (newHTML !== originalHTML) {
+      originalHTML = newHTML;
+      replaced++;
+    }
+  });
+
+  if (replaced > 0) {
+    resultContent.innerHTML = originalHTML;
+    // Re-inject helpers
+    injectCodeCopyButtons(resultContent);
+    injectDisclaimer(resultContent);
+    injectVerificationChecklist(resultContent);
+    injectExplainButtons(resultContent);
+    buildTOC(resultContent);
+    injectDataSourceHighlights(resultContent);
+    showToast('已替换 ' + replaced + ' 条幻觉引用为真实文献');
+    // Update sidebar
+    document.getElementById('sidebar-body').removeAttribute('data-ref-results');
+    runReferenceCheck();
+  } else {
+    showToast('未能自动替换，请手动点击建议替换条目');
+  }
+}
+
+// Replace a single reference
+function replaceSingleRef(index, newApa) {
+  var sidebarBody = document.getElementById('sidebar-body');
+  var raw = sidebarBody.dataset.refResults || '';
+  if (!raw) return;
+
+  var results;
+  try { results = JSON.parse(raw); } catch(e) { return; }
+  var r = results[index];
+  if (!r) return;
+
+  var resultContent = getActiveContent();
+  if (!resultContent) return;
+
+  var originalHTML = resultContent.innerHTML;
+  var escapedOrig = r.original.slice(0, 120).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  var pattern = new RegExp('\\[' + r.ref_num + '\\]\\s*' + escapedOrig.split(' ').slice(0, 6).join('\\s+').replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '[^\\[]*', 'i');
+  var newHTML = originalHTML.replace(pattern, '[' + r.ref_num + '] ' + newApa);
+
+  if (newHTML !== originalHTML) {
+    resultContent.innerHTML = newHTML;
+    injectCodeCopyButtons(resultContent);
+    injectDisclaimer(resultContent);
+    injectVerificationChecklist(resultContent);
+    injectExplainButtons(resultContent);
+    buildTOC(resultContent);
+    injectDataSourceHighlights(resultContent);
+    showToast('已替换引用 [' + r.ref_num + ']');
+    // Update stored results
+    r.status = 'verified';
+    r.original = newApa.slice(0, 200);
+    sidebarBody.dataset.refResults = JSON.stringify(results);
+  }
 }
 
 async function runMathCheck() {

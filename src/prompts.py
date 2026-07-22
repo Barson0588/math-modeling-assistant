@@ -501,9 +501,11 @@ Rules:
 5. **Keep formulas intact**: LaTeX math expressions must be copied verbatim
 6. **Maintain academic tone**: Output should still read as formal academic writing
 
-Output format:
-- First show the rewritten passage in a code block
-- Then briefly list the changes you made (2-3 bullet points)
+CRITICAL OUTPUT RULES:
+- Return ONLY the rewritten paper/passage as plain text — NO code blocks, NO markdown fences
+- Do NOT add a "Changes made" section or any commentary
+- Do NOT wrap the output in ``` or ```text markers
+- The output must be the complete rewritten text ready to use directly with zero formatting wrappers
 
 Be thorough — rewrite every sentence, not just swap a few words."""
 
