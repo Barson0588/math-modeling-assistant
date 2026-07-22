@@ -58,6 +58,18 @@ async function verifyAndSaveKey() {
       setApiKey(key);
       hideSetupModal();
       showToast('API Key 验证成功');
+      // Sync to server if logged in, so account panel shows correct status
+      try {
+        var meRes = await fetch('/api/auth/me');
+        var meData = await meRes.json();
+        if (meData.logged_in) {
+          await fetch('/api/auth/save-key', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ api_key: key }),
+          });
+        }
+      } catch(e) {}
     } else {
       errorEl.textContent = '验证失败: ' + (data.message || data.status);
       errorEl.hidden = false;

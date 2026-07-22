@@ -35,7 +35,7 @@
         <div class="account-header" id="account-email-header"></div>
         <div class="account-body">
           <div class="account-key-row">
-            <span class="account-key-status no-key" id="account-key-status">API Key 未配置</span>
+            <span class="account-key-status no-key" id="account-key-status">&#9888; API Key 未配置</span>
             <button id="account-setup-key-btn" class="btn-sm">配置</button>
           </div>
           <button id="account-logout-btn" class="btn-primary" style="width:100%;padding:8px;font-size:12px">退出登录</button>
@@ -533,10 +533,21 @@
   }
 
   async function syncLocalData() {
+    // Push local key to server
     try {
       var localKey = localStorage.getItem('mma-api-key');
       if (localKey && localKey.startsWith('sk-')) {
         await authApi('/api/auth/save-key', { api_key: localKey });
+      }
+    } catch(e) {}
+    // Pull key from server if localStorage doesn't have one
+    try {
+      if (!localStorage.getItem('mma-api-key') || !localStorage.getItem('mma-api-key').startsWith('sk-')) {
+        var keyRes = await fetch('/api/auth/get-key');
+        var keyData = await keyRes.json();
+        if (keyData.api_key && keyData.api_key.startsWith('sk-')) {
+          localStorage.setItem('mma-api-key', keyData.api_key);
+        }
       }
     } catch(e) {}
     try {
@@ -646,7 +657,7 @@
       // Update API key status
       var keyStatus = document.getElementById('account-key-status');
       if (data.has_api_key) {
-        keyStatus.textContent = 'API Key 已配置';
+        keyStatus.innerHTML = '&#10003; API Key 已配置';
         keyStatus.className = 'account-key-status has-key';
       }
       // Dismiss any guidance

@@ -1,6 +1,7 @@
 """Authentication: register, login, logout, key management."""
 import uuid
 import os
+import sqlite3
 from datetime import datetime, timedelta, timezone
 from functools import wraps
 from flask import Blueprint, request, jsonify, g
@@ -9,6 +10,9 @@ from cryptography.fernet import Fernet
 from .db import get_db, init_db
 
 auth_bp = Blueprint('auth', __name__)
+
+# Ensure tables exist once at import time (idempotent)
+init_db()
 
 # Encryption for API keys
 import base64
@@ -89,7 +93,6 @@ def register():
     if len(password) < 6:
         return jsonify({'error': '密码至少 6 位'}), 400
 
-    init_db()
     conn = get_db()
     existing = conn.execute("SELECT id FROM user WHERE email = ?", (email,)).fetchone()
     if existing:
@@ -97,9 +100,14 @@ def register():
         return jsonify({'error': '该邮箱已注册'}), 409
 
     password_hash = generate_password_hash(password)
-    conn.execute("INSERT INTO user (email, password_hash) VALUES (?, ?)",
-                 (email, password_hash))
-    conn.commit()
+    try:
+        conn.execute("INSERT INTO user (email, password_hash) VALUES (?, ?)",
+                     (email, password_hash))
+        conn.commit()
+    except sqlite3.IntegrityError:
+        conn.close()
+        return jsonify({'error': '该邮箱已注册'}), 409
+
     user_id = conn.execute("SELECT id FROM user WHERE email = ?", (email,)).fetchone()['id']
 
     # Auto-login after register
@@ -122,7 +130,6 @@ def login():
     email = data.get('email', '').strip().lower()
     password = data.get('password', '').strip()
 
-    init_db()
     conn = get_db()
     user = conn.execute("SELECT id, password_hash FROM user WHERE email = ?",
                         (email,)).fetchone()
@@ -190,4 +197,4 @@ def save_key():
 def get_key():
     user = g.current_user
     decrypted = decrypt_api_key(user['encrypted_api_key'])
-    return jsonify({'api_key': decrypted[:8] + '***' if decrypted else ''})
+    return jsonify({'api_key': decrypted or '', 'has_key': bool(decrypted)})

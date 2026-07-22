@@ -2090,11 +2090,16 @@ footer { text-align: center; padding: 24px; color: var(--text-secondary); font-s
 .account-panel .account-key-row {
   display: flex; align-items: center; justify-content: space-between;
   font-size: 12px; color: var(--text-secondary); margin-bottom: 10px;
-  gap: 8px;
+  gap: 8px; padding: 8px 10px; border-radius: 8px;
+  background: color-mix(in srgb, var(--amber) 12%, transparent);
 }
-.account-panel .account-key-status { font-size: 12px; }
-.account-panel .account-key-status.has-key { color: var(--green); }
-.account-panel .account-key-status.no-key { color: var(--amber); }
+.account-panel .account-key-status { font-size: 12px; font-weight: 500; }
+.account-panel .account-key-status.has-key {
+  color: var(--green);
+}
+.account-panel .account-key-status.no-key {
+  color: #d97706;
+}
 
 @media (max-width: 768px) {
   .glass-card { padding: 24px; margin: 16px; }
