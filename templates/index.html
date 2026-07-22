@@ -27,10 +27,20 @@
     </div>
     <button id="settings-btn" class="nav-btn settings-btn" title="设置">&#9881;</button>
     <button id="theme-toggle" class="theme-btn" title="切换深色模式">🌙</button>
-    {% if not offline_mode %}<a href="/login" id="login-link" class="nav-login-link">登录</a>{% endif %}
-    <span id="user-menu" class="user-menu" hidden>
-      <span id="user-email-display" class="user-email-display"></span>
+    {% if not offline_mode %}<span id="login-link" class="nav-login-link">登录</span>{% endif %}
+    <span id="user-menu" class="user-menu" hidden style="position:relative">
+      <span id="user-email-display" class="user-email-display" style="cursor:pointer"></span>
       <button id="logout-btn" class="btn-sm logout-btn">退出</button>
+      <div id="account-panel" class="account-panel" hidden>
+        <div class="account-header" id="account-email-header"></div>
+        <div class="account-body">
+          <div class="account-key-row">
+            <span class="account-key-status no-key" id="account-key-status">API Key 未配置</span>
+            <button id="account-setup-key-btn" class="btn-sm">配置</button>
+          </div>
+          <button id="account-logout-btn" class="btn-primary" style="width:100%;padding:8px;font-size:12px">退出登录</button>
+        </div>
+      </div>
     </span>
   </div>
 </nav>
@@ -367,6 +377,53 @@
 <button id="toc-dropdown-btn" class="toc-dropdown-btn" hidden>&#9776; 目录</button>
 <div id="toc-dropdown" class="toc-dropdown" hidden></div>
 
+<!-- Login Modal -->
+<div id="login-modal" class="login-overlay" hidden>
+  <div class="glass-card" style="position:relative">
+    <button id="login-modal-close" class="login-modal-close">&times;</button>
+    <div class="login-tabs">
+      <button class="login-tab active" data-tab="login">登录</button>
+      <button class="login-tab" data-tab="register">注册</button>
+    </div>
+    <div id="login-modal-error" class="login-modal-error" hidden></div>
+    <form id="modal-login-form" class="login-form">
+      <div class="field">
+        <label>邮箱</label>
+        <input type="email" id="modal-login-email" placeholder="your@email.com" required autofocus>
+      </div>
+      <div class="field">
+        <label>密码</label>
+        <input type="password" id="modal-login-password" placeholder="至少 6 位" required>
+      </div>
+      <button type="submit" class="btn-primary" style="width:100%;padding:12px" id="modal-login-btn">
+        <span class="btn-text">登录</span>
+        <span class="btn-loading" hidden><span class="spinner"></span>登录中...</span>
+      </button>
+    </form>
+    <form id="modal-register-form" class="login-form" hidden>
+      <div class="field">
+        <label>邮箱</label>
+        <input type="email" id="modal-reg-email" placeholder="your@email.com" required>
+      </div>
+      <div class="field">
+        <label>密码</label>
+        <input type="password" id="modal-reg-password" placeholder="至少 6 位" required minlength="6">
+      </div>
+      <div class="field">
+        <label>确认密码</label>
+        <input type="password" id="modal-reg-confirm" placeholder="再输入一次" required minlength="6">
+      </div>
+      <button type="submit" class="btn-primary" style="width:100%;padding:12px" id="modal-reg-btn">
+        <span class="btn-text">注册</span>
+        <span class="btn-loading" hidden><span class="spinner"></span>注册中...</span>
+      </button>
+    </form>
+    <p style="text-align:center;margin-top:12px;font-size:13px;color:var(--text-secondary)">
+      <span id="modal-switch-hint">还没有账号？<span class="guidance-link" id="modal-switch-to-register">去注册</span></span>
+    </p>
+  </div>
+</div>
+
 </main>
 
 <!-- AI Teammate -->
@@ -396,18 +453,261 @@
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 <script>
-// Check login status before loading main app
-fetch('/api/auth/me').then(r => r.json()).then(data => {
-  if (data.logged_in) {
-    document.getElementById('login-link').hidden = true;
-    var menu = document.getElementById('user-menu');
-    menu.hidden = false;
-    document.getElementById('user-email-display').textContent = data.email;
-    document.getElementById('logout-btn').addEventListener('click', function() {
-      fetch('/api/auth/logout', { method: 'POST' }).then(() => location.reload());
+// ===== Auth: Login Modal, Account Panel, Guidance Hints =====
+(function() {
+  var loginLink = document.getElementById('login-link');
+  var userMenu = document.getElementById('user-menu');
+  var loginModal = document.getElementById('login-modal');
+  var loginError = document.getElementById('login-modal-error');
+  var accountPanel = document.getElementById('account-panel');
+  var loginGuidance = null;
+  var currentUser = null;
+
+  // ---- Modal open/close ----
+  function openLoginModal(tab) {
+    tab = tab || 'login';
+    loginModal.hidden = false;
+    loginError.hidden = true;
+    document.querySelectorAll('.login-tab').forEach(function(t) {
+      t.classList.toggle('active', t.dataset.tab === tab);
+    });
+    document.getElementById('modal-login-form').hidden = (tab !== 'login');
+    document.getElementById('modal-register-form').hidden = (tab !== 'register');
+    document.getElementById('modal-switch-hint').innerHTML = tab === 'login'
+      ? '还没有账号？<span class="guidance-link" id="modal-switch-to-register">去注册</span>'
+      : '已有账号？<span class="guidance-link" id="modal-switch-to-login">去登录</span>';
+    bindSwitchLinks();
+    if (tab === 'login') setTimeout(function() { document.getElementById('modal-login-email').focus(); }, 200);
+    else setTimeout(function() { document.getElementById('modal-reg-email').focus(); }, 200);
+  }
+
+  function closeLoginModal() {
+    loginModal.hidden = true;
+    resetLoginForms();
+  }
+
+  function resetLoginForms() {
+    document.getElementById('modal-login-form').reset();
+    document.getElementById('modal-register-form').reset();
+    loginError.hidden = true;
+  }
+
+  if (loginLink) {
+    loginLink.addEventListener('click', function() { openLoginModal('login'); });
+  }
+  document.getElementById('login-modal-close').addEventListener('click', closeLoginModal);
+  loginModal.addEventListener('click', function(e) { if (e.target === loginModal) closeLoginModal(); });
+
+  // ---- Tab switching ----
+  document.querySelectorAll('.login-tab').forEach(function(tab) {
+    tab.addEventListener('click', function() {
+      openLoginModal(tab.dataset.tab);
+    });
+  });
+
+  function bindSwitchLinks() {
+    var toRegister = document.getElementById('modal-switch-to-register');
+    var toLogin = document.getElementById('modal-switch-to-login');
+    if (toRegister) toRegister.onclick = function() { openLoginModal('register'); };
+    if (toLogin) toLogin.onclick = function() { openLoginModal('login'); };
+  }
+
+  // ---- API helpers ----
+  async function authApi(url, body) {
+    var res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    return { status: res.status, data: await res.json() };
+  }
+
+  function setBtnLoading(btnId, loading) {
+    var btn = document.getElementById(btnId);
+    if (!btn) return;
+    var text = btn.querySelector('.btn-text');
+    var load = btn.querySelector('.btn-loading');
+    if (text) text.hidden = loading;
+    if (load) load.hidden = !loading;
+    btn.disabled = loading;
+  }
+
+  async function syncLocalData() {
+    try {
+      var localKey = localStorage.getItem('mma-api-key');
+      if (localKey && localKey.startsWith('sk-')) {
+        await authApi('/api/auth/save-key', { api_key: localKey });
+      }
+    } catch(e) {}
+    try {
+      var localHistory = localStorage.getItem('mma-generator-history');
+      if (localHistory) {
+        await fetch('/api/history/import', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ items: JSON.parse(localHistory) }),
+        });
+      }
+    } catch(e) {}
+  }
+
+  // ---- Login form ----
+  document.getElementById('modal-login-form').addEventListener('submit', function(e) {
+    e.preventDefault();
+    var email = document.getElementById('modal-login-email').value.trim();
+    var password = document.getElementById('modal-login-password').value;
+    if (!email || !password) {
+      loginError.textContent = '请填写邮箱和密码'; loginError.hidden = false; return;
+    }
+    setBtnLoading('modal-login-btn', true);
+    loginError.hidden = true;
+    authApi('/api/auth/login', { email: email, password: password }).then(function(r) {
+      setBtnLoading('modal-login-btn', false);
+      if (r.status === 200) {
+        syncLocalData().then(function() { location.reload(); });
+      } else {
+        loginError.textContent = r.data.error || '登录失败';
+        loginError.hidden = false;
+      }
+    });
+  });
+
+  // ---- Register form ----
+  document.getElementById('modal-register-form').addEventListener('submit', function(e) {
+    e.preventDefault();
+    var email = document.getElementById('modal-reg-email').value.trim();
+    var password = document.getElementById('modal-reg-password').value;
+    var confirm = document.getElementById('modal-reg-confirm').value;
+    if (!email || !password) {
+      loginError.textContent = '请填写邮箱和密码'; loginError.hidden = false; return;
+    }
+    if (password !== confirm) {
+      loginError.textContent = '两次密码不一致'; loginError.hidden = false; return;
+    }
+    if (password.length < 6) {
+      loginError.textContent = '密码至少 6 位'; loginError.hidden = false; return;
+    }
+    setBtnLoading('modal-reg-btn', true);
+    loginError.hidden = true;
+    authApi('/api/auth/register', { email: email, password: password }).then(function(r) {
+      setBtnLoading('modal-reg-btn', false);
+      if (r.status === 200) {
+        syncLocalData().then(function() { location.reload(); });
+      } else {
+        loginError.textContent = r.data.error || '注册失败';
+        loginError.hidden = false;
+      }
+    });
+  });
+
+  // ---- Account panel ----
+  var emailDisplay = document.getElementById('user-email-display');
+  if (emailDisplay) {
+    emailDisplay.addEventListener('click', function(e) {
+      e.stopPropagation();
+      accountPanel.hidden = !accountPanel.hidden;
     });
   }
-}).catch(() => {});
+
+  document.addEventListener('click', function(e) {
+    if (accountPanel.hidden) return;
+    if (!userMenu.contains(e.target)) {
+      accountPanel.hidden = true;
+    }
+  });
+
+  document.getElementById('account-setup-key-btn').addEventListener('click', function() {
+    accountPanel.hidden = true;
+    var setupModal = document.getElementById('setup-modal');
+    if (setupModal) setupModal.hidden = false;
+  });
+
+  document.getElementById('account-logout-btn').addEventListener('click', function() {
+    fetch('/api/auth/logout', { method: 'POST' }).then(function() { location.reload(); });
+  });
+
+  // Keep old logout-btn working too
+  var oldLogout = document.getElementById('logout-btn');
+  if (oldLogout) {
+    oldLogout.addEventListener('click', function() {
+      fetch('/api/auth/logout', { method: 'POST' }).then(function() { location.reload(); });
+    });
+  }
+
+  // ---- Check login status ----
+  fetch('/api/auth/me').then(function(r) { return r.json(); }).then(function(data) {
+    if (data.logged_in) {
+      currentUser = data;
+      loginLink.hidden = true;
+      userMenu.hidden = false;
+      document.getElementById('user-email-display').textContent = data.email;
+      document.getElementById('account-email-header').textContent = data.email;
+      document.getElementById('login-link').classList.add('logged-in');
+      // Update API key status
+      var keyStatus = document.getElementById('account-key-status');
+      if (data.has_api_key) {
+        keyStatus.textContent = 'API Key 已配置';
+        keyStatus.className = 'account-key-status has-key';
+      }
+      // Dismiss any guidance
+      dismissGuidance();
+    } else {
+      loginLink.hidden = false;
+      userMenu.hidden = true;
+    }
+  }).catch(function() {});
+
+  // ---- Login guidance banner ----
+  function showGuidance() {
+    if (currentUser) return;
+    if (sessionStorage.getItem('mma-guidance-dismissed')) return;
+    if (loginGuidance) return; // already shown
+
+    var panel = document.getElementById('teammate-messages');
+    if (!panel) return;
+
+    loginGuidance = document.createElement('div');
+    loginGuidance.className = 'login-guidance';
+    loginGuidance.innerHTML = '<span class="guidance-icon">💡</span>' +
+      '<span>登录后可保存记录和 API Key，跨设备同步</span>' +
+      '<span class="guidance-link" id="guidance-login-btn">去登录</span>' +
+      '<button class="guidance-dismiss" id="guidance-dismiss-btn">&times;</button>';
+
+    panel.insertBefore(loginGuidance, panel.firstChild);
+
+    document.getElementById('guidance-login-btn').addEventListener('click', function() {
+      openLoginModal('login');
+    });
+    document.getElementById('guidance-dismiss-btn').addEventListener('click', function() {
+      dismissGuidance();
+    });
+  }
+
+  function dismissGuidance() {
+    sessionStorage.setItem('mma-guidance-dismissed', '1');
+    if (loginGuidance) {
+      loginGuidance.remove();
+      loginGuidance = null;
+    }
+  }
+
+  // Show guidance after user types in problem field
+  var guidanceTimer;
+  var problemField = document.getElementById('problem');
+  if (problemField) {
+    problemField.addEventListener('input', function() {
+      clearTimeout(guidanceTimer);
+      if (currentUser) return;
+      if (problemField.value.length > 30) {
+        guidanceTimer = setTimeout(showGuidance, 1500);
+      }
+    });
+  }
+
+  // Expose to global
+  window.openLoginModal = openLoginModal;
+  window.showLoginGuidance = showGuidance;
+})();
 </script>
 <script src="/static/js/lib.js"></script>
 <script src="/static/script.js"></script>
