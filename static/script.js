@@ -1202,6 +1202,7 @@ paperGenerateBtn.addEventListener('click', async () => {
     setTimeout(() => paperContent.classList.remove('completed'), 2500);
     if (!errorOccurred && fullContent) {
       savePaperHistory(problem, contestType, problemType, fullContent);
+      saveDraft(problem, contestType, problemType, fullContent);
       if (window.advanceStep) window.advanceStep(4);
       showToast('论文生成完成');
     }
@@ -1217,6 +1218,7 @@ paperGenerateBtn.addEventListener('click', async () => {
         injectPaperStats();
         injectQuickActions();
         savePaperHistory(problem, contestType, problemType, fullContent);
+        saveDraft(problem, contestType, problemType, fullContent);
         paperResultLabel.textContent = '已取消（内容已保留）';
       } else {
         paperContent.innerHTML = '<p class="error-msg">已取消生成</p>';
@@ -1228,6 +1230,7 @@ paperGenerateBtn.addEventListener('click', async () => {
         injectCodeCopyButtons(paperContent);
         injectQuickActions();
         savePaperHistory(problem, contestType, problemType, fullContent);
+        saveDraft(problem, contestType, problemType, fullContent);
         paperResultLabel.textContent = '部分结果';
       }
     }
