@@ -2621,43 +2621,99 @@ function injectQuickActions() {
   const resultCard = document.querySelector('.result-card.visible, .paper-result-card.visible');
   if (!resultCard || resultCard.querySelector('.quick-actions-bar')) return;
 
+  const GROUPS = [
+    {
+      name: '质量检查', count: 5,
+      items: [
+        { id: 'qa-plagiarism-btn', cls: 'plagiarism', icon: '&#128269;', label: 'AI 查重', title: 'AI 分析论文原创性，检测模板化内容和潜在雷同', fn: runPlagiarismCheck },
+        { id: 'qa-verify-refs-btn', cls: 'verify-refs', icon: '&#128214;', label: '验证引用', title: '交叉验证参考文献是否真实存在', fn: runReferenceCheck },
+        { id: 'qa-verify-math-btn', cls: 'verify-math', icon: '&#128208;', label: '验证推导', title: '独立复核数学推导的正确性', fn: runMathCheck },
+        { id: 'qa-score-btn', cls: 'score', icon: '&#127919;', label: '论文评分', title: '按 COMAP 评审标准打分', fn: runPaperScore },
+        { id: 'qa-review-btn', cls: 'review', icon: '&#127941;', label: '模拟评审', title: 'AI 扮演 COMAP 评委，按官方评分标准逐项打分', fn: runMockReview },
+      ]
+    },
+    {
+      name: '内容增强', count: 3,
+      items: [
+        { id: 'qa-abstract-btn', cls: 'abstract', icon: '&#128221;', label: '摘要精修', title: '按 COMAP 标准逐条审查优化摘要', fn: runAbstractRefine },
+        { id: 'qa-sensitivity-btn', cls: 'sensitivity', icon: '&#128202;', label: '敏感性分析', title: '生成敏感性分析 Python 代码', fn: runSensitivityAnalysis },
+        { id: 'qa-figures-btn', cls: 'figures', icon: '&#128200;', label: '图表建议', title: '智能推荐论文需要的图表并生成代码', fn: runFigureSuggest },
+      ]
+    },
+    {
+      name: '编辑管理', count: 3,
+      items: [
+        { id: 'qa-edit-btn', cls: 'edit', icon: '&#9999;', label: '编辑论文', title: '切换编辑 / 预览模式，可直接修改论文内容', fn: toggleEditMode },
+        { id: 'qa-compare-btn', cls: 'compare', icon: '&#128260;', label: '对比论文', title: '与上一版论文并排对比分析', fn: runPaperCompare },
+        { id: 'qa-export-btn', cls: 'export', icon: '&#128230;', label: '导出项目', title: '打包导出论文.md + 代码.py + 参考文献.bib', fn: exportProjectBundle },
+      ]
+    },
+  ];
+
+  var barHTML = '<span class="quick-actions-label">快捷操作</span>';
+  GROUPS.forEach(function(g) {
+    barHTML += '<div class="qa-group">' +
+      '<button class="qa-group-btn" data-group="' + g.name + '">' + g.name + ' <span class="qa-group-count">' + g.count + '</span></button>' +
+      '<div class="qa-group-panel">';
+    g.items.forEach(function(item) {
+      barHTML += '<button class="quick-action-btn ' + item.cls + '-action" id="' + item.id + '" title="' + item.title + '">' +
+        '<span class="qa-item-icon">' + item.icon + '</span>' + item.label + '</button>';
+    });
+    barHTML += '</div></div>';
+  });
+
   const bar = document.createElement('div');
   bar.className = 'quick-actions-bar';
-  bar.innerHTML = `
-    <span class="quick-actions-label">快捷操作</span>
-    <button class="quick-action-btn edit-action" id="qa-edit-btn" title="切换编辑 / 预览模式，可直接修改论文内容">✏️ 编辑论文</button>
-    <button class="quick-action-btn abstract-action" id="qa-abstract-btn" title="按 COMAP 标准逐条审查优化摘要">📝 摘要精修</button>
-    <button class="quick-action-btn plagiarism-action" id="qa-plagiarism-btn" title="AI 分析论文原创性，检测模板化内容和潜在雷同">🔍 AI 查重</button>
-    <button class="quick-action-btn sensitivity-action" id="qa-sensitivity-btn" title="生成敏感性分析 Python 代码">📊 敏感性分析</button>
-    <button class="quick-action-btn verify-refs-action" id="qa-verify-refs-btn" title="交叉验证参考文献是否真实存在">📚 验证引用</button>
-    <button class="quick-action-btn verify-math-action" id="qa-verify-math-btn" title="独立复核数学推导的正确性">📐 验证推导</button>
-    <button class="quick-action-btn score-action" id="qa-score-btn" title="按 COMAP 评审标准打分">🎯 论文评分</button>
-    <button class="quick-action-btn figures-action" id="qa-figures-btn" title="智能推荐论文需要的图表并生成代码">📈 图表建议</button>
-    <button class="quick-action-btn compare-action" id="qa-compare-btn" title="与上一版论文并排对比分析">🔄 对比论文</button>
-    <button class="quick-action-btn review-action" id="qa-review-btn" title="AI 扮演 COMAP 评委，按官方评分标准逐项打分">🏅 模拟评审</button>
-    <button class="quick-action-btn export-action" id="qa-export-btn" title="打包导出论文.md + 代码.py + 参考文献.bib">📦 导出项目</button>
-  `;
+  bar.innerHTML = barHTML;
 
-  // Insert after the result toolbar
-  const toolbar = resultCard.querySelector('.result-toolbar');
+  var toolbar = resultCard.querySelector('.result-toolbar');
   if (toolbar) {
     toolbar.insertAdjacentElement('afterend', bar);
   } else {
     resultCard.insertBefore(bar, resultCard.firstChild);
   }
 
-  // Wire up buttons
-  bar.querySelector('#qa-edit-btn').addEventListener('click', toggleEditMode);
-  bar.querySelector('#qa-abstract-btn').addEventListener('click', runAbstractRefine);
-  bar.querySelector('#qa-plagiarism-btn').addEventListener('click', runPlagiarismCheck);
-  bar.querySelector('#qa-sensitivity-btn').addEventListener('click', runSensitivityAnalysis);
-  bar.querySelector('#qa-verify-refs-btn').addEventListener('click', runReferenceCheck);
-  bar.querySelector('#qa-verify-math-btn').addEventListener('click', runMathCheck);
-  bar.querySelector('#qa-score-btn').addEventListener('click', runPaperScore);
-  bar.querySelector('#qa-figures-btn').addEventListener('click', runFigureSuggest);
-  bar.querySelector('#qa-compare-btn').addEventListener('click', runPaperCompare);
-  bar.querySelector('#qa-review-btn').addEventListener('click', runMockReview);
-  bar.querySelector('#qa-export-btn').addEventListener('click', exportProjectBundle);
+  // Wire up individual action buttons
+  bar.querySelector('#qa-edit-btn').addEventListener('click', function() { toggleEditMode(); });
+  bar.querySelector('#qa-abstract-btn').addEventListener('click', function() { runAbstractRefine(); });
+  bar.querySelector('#qa-plagiarism-btn').addEventListener('click', function() { runPlagiarismCheck(); });
+  bar.querySelector('#qa-sensitivity-btn').addEventListener('click', function() { runSensitivityAnalysis(); });
+  bar.querySelector('#qa-verify-refs-btn').addEventListener('click', function() { runReferenceCheck(); });
+  bar.querySelector('#qa-verify-math-btn').addEventListener('click', function() { runMathCheck(); });
+  bar.querySelector('#qa-score-btn').addEventListener('click', function() { runPaperScore(); });
+  bar.querySelector('#qa-figures-btn').addEventListener('click', function() { runFigureSuggest(); });
+  bar.querySelector('#qa-compare-btn').addEventListener('click', function() { runPaperCompare(); });
+  bar.querySelector('#qa-review-btn').addEventListener('click', function() { runMockReview(); });
+  bar.querySelector('#qa-export-btn').addEventListener('click', function() { exportProjectBundle(); });
+
+  // Group toggle logic
+  bar.querySelectorAll('.qa-group-btn').forEach(function(btn) {
+    btn.addEventListener('click', function(e) {
+      e.stopPropagation();
+      var panel = this.nextElementSibling;
+      var isOpen = panel.classList.contains('open');
+      // Close all panels first
+      bar.querySelectorAll('.qa-group-panel.open').forEach(function(p) { p.classList.remove('open'); });
+      bar.querySelectorAll('.qa-group-btn.active').forEach(function(b) { b.classList.remove('active'); });
+      // Toggle this one
+      if (!isOpen) {
+        panel.classList.add('open');
+        this.classList.add('active');
+      }
+    });
+  });
+
+  // Close panels on outside click
+  document.addEventListener('click', function(e) {
+    if (!bar.contains(e.target)) {
+      bar.querySelectorAll('.qa-group-panel.open').forEach(function(p) { p.classList.remove('open'); });
+      bar.querySelectorAll('.qa-group-btn.active').forEach(function(b) { b.classList.remove('active'); });
+    }
+  });
+
+  // Open first group by default
+  var firstBtn = bar.querySelector('.qa-group-btn');
+  if (firstBtn) firstBtn.click();
 }
 
 // ============================================================
