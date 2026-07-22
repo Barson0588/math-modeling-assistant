@@ -2456,3 +2456,50 @@ footer { text-align: center; padding: 24px; color: var(--text-secondary); font-s
   .teammate-float-btn { bottom: 80px; right: 16px; }
   .teammate-mic-btn { display: inline-block !important; }
 }
+
+/* ============================================================
+   Workflow Step Bar & Progress Cards
+   ============================================================ */
+.step-bar {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 12px 0 20px; flex-wrap: wrap;
+}
+.step-item { display: flex; align-items: center; gap: 6px; cursor: default; }
+.step-item.done { cursor: pointer; }
+.step-dot {
+  width: 28px; height: 28px; border-radius: 50%; display: flex;
+  align-items: center; justify-content: center; font-size: 12px;
+  font-weight: 600; background: var(--inline-code-bg); color: var(--text-secondary);
+  transition: all .3s;
+}
+.step-item.active .step-dot { background: var(--accent); color: #fff; }
+.step-item.done .step-dot { background: var(--green); color: #fff; }
+.step-label { font-size: 13px; color: var(--text-secondary); }
+.step-item.active .step-label { color: var(--text); font-weight: 500; }
+.step-arrow { color: var(--text-secondary); opacity: 0.4; font-size: 14px; }
+
+.progress-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 16px; margin-bottom: 16px;
+}
+.progress-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.progress-title { font-size: 14px; font-weight: 600; }
+.progress-stages { display: flex; flex-direction: column; gap: 6px; }
+.progress-stage { font-size: 13px; padding: 6px 10px; border-radius: 6px; display: flex; align-items: center; gap: 8px; }
+.progress-stage.pending { color: var(--text-secondary); }
+.progress-stage.in-progress { background: var(--accent-light); color: var(--accent); font-weight: 500; }
+.progress-stage .stage-spinner {
+  width: 14px; height: 14px; border: 2px solid var(--accent);
+  border-top-color: transparent; border-radius: 50%;
+  animation: spin .8s linear infinite; display: inline-block;
+}
+.progress-stage.done { color: var(--green); }
+.progress-stage .stage-check { margin-left: auto; font-weight: 600; }
+.stage-icon { font-size: 15px; }
+
+@media (max-width: 768px) {
+  .step-bar { gap: 4px; }
+  .step-label { display: none; }
+  .step-arrow { display: none; }
+  .step-dot { width: 24px; height: 24px; font-size: 11px; }
+}

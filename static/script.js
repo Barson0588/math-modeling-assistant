@@ -708,6 +708,44 @@ const resultLabel = document.getElementById('result-label');
 const historyCard = document.getElementById('history-card');
 const historyList = document.getElementById('history-list');
 
+// ---- Workflow Step Bar ----
+(function initStepBar() {
+  var bar = document.createElement('div');
+  bar.className = 'step-bar';
+  bar.id = 'workflow-step-bar';
+  bar.innerHTML = '<div class="step-item active" data-step="1"><span class="step-dot">1</span><span class="step-label">选题</span></div>' +
+    '<div class="step-arrow">&rarr;</div>' +
+    '<div class="step-item" data-step="2"><span class="step-dot">2</span><span class="step-label">生成框架</span></div>' +
+    '<div class="step-arrow">&rarr;</div>' +
+    '<div class="step-item" data-step="3"><span class="step-dot">3</span><span class="step-label">完整论文</span></div>' +
+    '<div class="step-arrow">&rarr;</div>' +
+    '<div class="step-item" data-step="4"><span class="step-dot">4</span><span class="step-label">检查优化</span></div>' +
+    '<div class="step-arrow">&rarr;</div>' +
+    '<div class="step-item" data-step="5"><span class="step-dot">5</span><span class="step-label">导出</span></div>';
+  var hero = document.querySelector('#tab-generator .hero');
+  if (hero) hero.after(bar);
+
+  window.advanceStep = function(step) {
+    document.querySelectorAll('#workflow-step-bar .step-item').forEach(function(item) {
+      var s = parseInt(item.dataset.step);
+      item.classList.remove('active', 'done');
+      if (s < step) item.classList.add('done');
+      if (s === step) item.classList.add('active');
+    });
+  };
+
+  bar.querySelectorAll('.step-item').forEach(function(item) {
+    item.addEventListener('click', function() {
+      var step = parseInt(item.dataset.step);
+      var currentStep = document.querySelector('#workflow-step-bar .step-item.active');
+      var currentS = currentStep ? parseInt(currentStep.dataset.step) : 1;
+      if (step > currentS && window.Teammate) {
+        window.Teammate.addMessage('teammate', '请先完成上一步再继续。', []);
+      }
+    });
+  });
+})();
+
 function setButtonsLoading(btn, loading) {
   btn.querySelector('.btn-text').hidden = loading;
   btn.querySelector('.btn-loading').hidden = !loading;
@@ -732,7 +770,10 @@ generateBtn.addEventListener('click', async () => {
   setButtonsLoading(generateBtn, true);
   aiReportBtn.disabled = true;
   resultDiv.classList.add('visible');
-  resultContent.innerHTML = '<div class="stage-indicator"><span class="stage-dot"></span>准备中...<button class="btn-sm cancel-gen-btn" id="gen-cancel-btn">取消</button></div>';
+  resultContent.innerHTML = '<div class="progress-card" id="gen-progress-card">' +
+    '<div class="progress-header"><span class="progress-title">生成进度</span></div>' +
+    '<div class="progress-stages" id="gen-stages"></div></div>' +
+    '<div class="stage-indicator"><span class="stage-dot"></span>准备中...<button class="btn-sm cancel-gen-btn" id="gen-cancel-btn">取消</button></div>';
   resultLabel.textContent = '生成结果';
   resultDiv.scrollIntoView({ behavior: 'smooth' });
   const stageEl = resultContent.querySelector('.stage-indicator');
