@@ -1664,11 +1664,13 @@ restoreInputs();
 })();
 
 // ============================================================
-// Utilities
+// Utilities (shared in lib.js — define only if not already loaded)
 // ============================================================
+if (typeof escapeHtml === 'undefined') {
 function escapeHtml(str) {
   if (!str) return '';
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
 }
 
 // ============================================================
