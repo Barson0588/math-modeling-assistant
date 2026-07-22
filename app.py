@@ -31,6 +31,11 @@ CORS(app, supports_credentials=True)
 
 app.register_blueprint(auth_bp)
 
+from src.routes.history import history_bp
+from src.routes.context_hint import context_hint_bp
+app.register_blueprint(history_bp)
+app.register_blueprint(context_hint_bp)
+
 # Initialize database on startup
 init_db()
 
