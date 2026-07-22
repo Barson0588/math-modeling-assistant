@@ -1,4 +1,5 @@
 // AI Teammate — floating panel with auto role-switching, proactive hints, voice input
+// Now with drag-to-move, resize handle, welcome message, and preference persistence
 (function() {
   const ROLE_CONFIG = {
     generator: { name: '建模手', icon: '📐' },
@@ -8,6 +9,9 @@
     guide: { name: '教练', icon: '🎯' },
     roles: { name: '教练', icon: '🎯' },
   };
+
+  const WELCOME_SHOWN_KEY = 'mma-teammate-welcome';
+  const PANEL_PREF_KEY = 'mma-teammate-prefs';
 
   let currentRole = 'generator';
   let panelOpen = false;
@@ -21,6 +25,13 @@
   const badge = document.getElementById('teammate-badge');
   const roleIcon = document.getElementById('teammate-role-icon');
   const roleName = document.getElementById('teammate-role-name');
+  const headerEl = panel ? panel.querySelector('.teammate-header') : null;
+
+  // ---- Drag state ----
+  let dragging = false, dragStartX = 0, dragStartY = 0, panelStartX = 0, panelStartY = 0;
+
+  // ---- Resize state ----
+  let resizing = false, resizeStartX = 0, resizeStartY = 0, panelStartW = 0, panelStartH = 0;
 
   function updateRole(tabName) {
     const config = ROLE_CONFIG[tabName] || ROLE_CONFIG.generator;
@@ -68,11 +79,29 @@
     return el;
   }
 
+  function showWelcome() {
+    var shown = sessionStorage.getItem(WELCOME_SHOWN_KEY);
+    if (shown) return;
+    sessionStorage.setItem(WELCOME_SHOWN_KEY, '1');
+
+    var config = ROLE_CONFIG[currentRole] || ROLE_CONFIG.generator;
+    addMessage('teammate',
+      '👋 你好！我是你的 <b>AI 竞赛队友</b>，会根据当前页面自动切换角色：<br><br>' +
+      '📐 <b>建模手</b> — 在 Generator / Models 页面出现，帮你分析题目、推荐模型<br>' +
+      '✍️ <b>写作手</b> — 在 Paper 页面出现，帮你优化论文结构、精修摘要<br>' +
+      '🎯 <b>教练</b> — 在 Guide / Roles 页面出现，帮团队规划时间、检查进度<br><br>' +
+      '💡 <b>小技巧：</b>拖动标题栏可以移动面板，拖拽左下角可以调整大小，双击标题恢复默认。直接问我问题，我会调用 AI 帮你解答！',
+      [{ label: '知道了', payload: 'dismiss_welcome' }]
+    );
+  }
+
   function open() {
     panel.hidden = false;
     panelOpen = true;
     unreadCount = 0;
     badge.hidden = true;
+    loadPanelPrefs();
+    showWelcome();
     setTimeout(function() { if (inputEl) inputEl.focus(); }, 300);
   }
 
@@ -83,13 +112,10 @@
 
   function handleAction(payload) {
     if (!payload) return;
+    if (payload === 'dismiss_welcome') return;
     switch(payload) {
       case 'recommend_continuous':
-        document.querySelector('[data-tab="models"]')?.click();
-        break;
       case 'recommend_discrete':
-        document.querySelector('[data-tab="models"]')?.click();
-        break;
       case 'recommend_data':
       case 'recommend_evaluation':
       case 'recommend_network':
@@ -126,6 +152,156 @@
       });
       var data = await res.json();
       if (data.hint_text) addMessage('teammate', data.hint_text, data.actions);
+    } catch(e) {}
+  }
+
+  // ---- Drag to move ----
+  function initDrag() {
+    if (!headerEl || isMobile) return;
+    headerEl.style.cursor = 'grab';
+    headerEl.addEventListener('mousedown', onDragStart);
+    document.addEventListener('mousemove', onDragMove);
+    document.addEventListener('mouseup', onDragEnd);
+    // Touch support
+    headerEl.addEventListener('touchstart', onDragStart, { passive: false });
+    document.addEventListener('touchmove', onDragMove, { passive: false });
+    document.addEventListener('touchend', onDragEnd);
+    // Double-click to reset
+    headerEl.addEventListener('dblclick', resetPanelPosition);
+  }
+
+  function onDragStart(e) {
+    if (e.target.tagName === 'BUTTON') return; // Don't drag on close button
+    dragging = true;
+    var clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    var clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    dragStartX = clientX;
+    dragStartY = clientY;
+    panelStartX = panel.offsetLeft;
+    panelStartY = panel.offsetTop;
+    panel.style.transition = 'none';
+    headerEl.style.cursor = 'grabbing';
+    if (e.preventDefault) e.preventDefault();
+  }
+
+  function onDragMove(e) {
+    if (!dragging) return;
+    var clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    var clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    var dx = clientX - dragStartX;
+    var dy = clientY - dragStartY;
+    var newLeft = panelStartX + dx;
+    var newTop = panelStartY + dy;
+
+    // Clamp to viewport
+    var maxLeft = window.innerWidth - panel.offsetWidth - 8;
+    var maxTop = window.innerHeight - panel.offsetHeight - 8;
+    newLeft = Math.max(8, Math.min(newLeft, maxLeft));
+    newTop = Math.max(8, Math.min(newTop, maxTop));
+
+    panel.style.left = newLeft + 'px';
+    panel.style.right = 'auto';
+    panel.style.bottom = 'auto';
+    panel.style.top = newTop + 'px';
+  }
+
+  function onDragEnd() {
+    if (!dragging) return;
+    dragging = false;
+    panel.style.transition = '';
+    if (headerEl) headerEl.style.cursor = 'grab';
+    savePanelPrefs();
+  }
+
+  function resetPanelPosition() {
+    panel.style.left = '';
+    panel.style.right = '24px';
+    panel.style.bottom = '92px';
+    panel.style.top = '';
+    panel.style.width = '';
+    panel.style.height = '';
+    panel.style.maxHeight = '';
+    localStorage.removeItem(PANEL_PREF_KEY);
+    if (headerEl) headerEl.style.cursor = 'grab';
+  }
+
+  // ---- Resize handle ----
+  function initResize() {
+    if (isMobile) return;
+    // Create resize handle
+    var handle = document.createElement('div');
+    handle.className = 'teammate-resize-handle';
+    handle.title = '拖拽调整大小';
+    handle.innerHTML = '↘';
+    panel.appendChild(handle);
+
+    handle.addEventListener('mousedown', onResizeStart);
+    document.addEventListener('mousemove', onResizeMove);
+    document.addEventListener('mouseup', onResizeEnd);
+    handle.addEventListener('touchstart', onResizeStart, { passive: false });
+    document.addEventListener('touchmove', onResizeMove, { passive: false });
+    document.addEventListener('touchend', onResizeEnd);
+  }
+
+  function onResizeStart(e) {
+    resizing = true;
+    var clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    var clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    resizeStartX = clientX;
+    resizeStartY = clientY;
+    panelStartW = panel.offsetWidth;
+    panelStartH = panel.offsetHeight;
+    panel.style.transition = 'none';
+    if (e.preventDefault) e.preventDefault();
+    e.stopPropagation();
+  }
+
+  function onResizeMove(e) {
+    if (!resizing) return;
+    var clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    var clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    var dw = clientX - resizeStartX;
+    var dh = clientY - resizeStartY;
+    var newW = Math.max(280, Math.min(600, panelStartW + dw));
+    var newH = Math.max(300, Math.min(window.innerHeight * 0.8, panelStartH + dh));
+    panel.style.width = newW + 'px';
+    panel.style.height = newH + 'px';
+    panel.style.maxHeight = 'none';
+  }
+
+  function onResizeEnd() {
+    if (!resizing) return;
+    resizing = false;
+    panel.style.transition = '';
+    savePanelPrefs();
+  }
+
+  // ---- Persistence ----
+  function savePanelPrefs() {
+    if (isMobile) return;
+    var prefs = {
+      left: panel.style.left || '',
+      right: panel.style.right || '',
+      top: panel.style.top || '',
+      bottom: panel.style.bottom || '',
+      width: panel.style.width || '',
+      height: panel.style.height || '',
+    };
+    // Only save if user actually moved/resized
+    if (!prefs.left && !prefs.top && !prefs.width) return;
+    localStorage.setItem(PANEL_PREF_KEY, JSON.stringify(prefs));
+  }
+
+  function loadPanelPrefs() {
+    if (isMobile) return;
+    try {
+      var raw = localStorage.getItem(PANEL_PREF_KEY);
+      if (!raw) return;
+      var prefs = JSON.parse(raw);
+      if (prefs.left) { panel.style.left = prefs.left; panel.style.right = 'auto'; }
+      if (prefs.top) { panel.style.top = prefs.top; panel.style.bottom = 'auto'; }
+      if (prefs.width) { panel.style.width = prefs.width; panel.style.maxHeight = 'none'; }
+      if (prefs.height) { panel.style.height = prefs.height; panel.style.maxHeight = 'none'; }
     } catch(e) {}
   }
 
@@ -219,6 +395,12 @@
     });
   }
 
+  // ---- Init drag & resize ----
+  setTimeout(function() {
+    initDrag();
+    initResize();
+  }, 500);
+
   // Resize handler
   window.addEventListener('resize', function() {
     isMobile = window.innerWidth <= 768;
@@ -236,9 +418,7 @@
   };
 
   // ---- Hook into tab switching ----
-  var origNavHandler = null;
   document.querySelectorAll('.nav-btn').forEach(function(btn) {
-    var origClick = btn.onclick;
     btn.addEventListener('click', function() {
       var tabName = btn.dataset.tab;
       updateRole(tabName);
@@ -253,11 +433,9 @@
   });
 
   // ---- Hook into generation lifecycle ----
-  // Watch for generation completions
   var genObserver = new MutationObserver(function(mutations) {
     mutations.forEach(function(m) {
       if (m.target.id === 'result-content' && m.target.children.length > 50) {
-        // Content appeared - generation likely completed
         setTimeout(function() {
           fetchHint({
             tab: 'generator',
@@ -268,7 +446,6 @@
           });
         }, 1000);
         genObserver.disconnect();
-        // Re-observe after 5s for next generation
         setTimeout(function() {
           var rc = document.getElementById('result-content');
           if (rc) genObserver.observe(rc, { childList: true, subtree: false });
