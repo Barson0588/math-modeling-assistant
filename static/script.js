@@ -927,6 +927,7 @@ generateBtn.addEventListener('click', async () => {
       saveHistory(problem, contestType, problemType, fullContent);
       saveDraft(problem, contestType, problemType, fullContent);
       if (window.advanceStep) window.advanceStep(3);
+      if (window._teammateOnGenerationComplete) window._teammateOnGenerationComplete('generator');
     }
   } catch (e) {
     _activeController = null;
@@ -1217,6 +1218,7 @@ paperGenerateBtn.addEventListener('click', async () => {
       saveDraft(problem, contestType, problemType, fullContent);
       if (window.advanceStep) window.advanceStep(4);
       showToast('论文生成完成');
+      if (window._teammateOnGenerationComplete) window._teammateOnGenerationComplete('paper');
     }
   } catch (e) {
     _activeController = null;
