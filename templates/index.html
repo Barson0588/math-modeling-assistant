@@ -368,6 +368,26 @@
 
 </main>
 
+<!-- AI Teammate -->
+<button id="teammate-btn" class="teammate-float-btn" title="AI 队友">
+  <span class="teammate-avatar">📐</span>
+  <span id="teammate-badge" class="teammate-badge" hidden>0</span>
+</button>
+
+<div id="teammate-panel" class="teammate-panel" hidden>
+  <div class="teammate-header">
+    <span id="teammate-role-icon">📐</span>
+    <span id="teammate-role-name">建模手</span>
+    <button id="teammate-close" class="teammate-close">&times;</button>
+  </div>
+  <div id="teammate-messages" class="teammate-messages"></div>
+  <div class="teammate-input-row">
+    <button id="teammate-mic-btn" class="teammate-mic-btn" title="语音输入" hidden>🎤</button>
+    <input type="text" id="teammate-input" class="teammate-input" placeholder="问队友...">
+    <button id="teammate-send" class="teammate-send-btn">发送</button>
+  </div>
+</div>
+
 <footer>
   <p>Math Modeling Assistant &middot; Powered by DeepSeek &middot; For MCM/ICM & CUMCM <span class="shortcuts-hint" title="键盘快捷键" onclick="showShortcuts()">?</span></p>
 </footer>
@@ -390,6 +410,7 @@ fetch('/api/auth/me').then(r => r.json()).then(data => {
 </script>
 <script src="/static/js/lib.js"></script>
 <script src="/static/script.js"></script>
+<script src="/static/js/ai-teammate.js"></script>
 <script>
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('/static/sw.js').catch(() => {});
