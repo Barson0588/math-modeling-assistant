@@ -807,6 +807,7 @@ if (tryExampleBtn) {
       });
     }
     document.getElementById('problem').scrollIntoView({ behavior: 'smooth' });
+    if (window.advanceStep) window.advanceStep(1);
   });
 }
 
@@ -822,6 +823,7 @@ generateBtn.addEventListener('click', async () => {
 
   setButtonsLoading(generateBtn, true);
   aiReportBtn.disabled = true;
+  if (window.advanceStep) window.advanceStep(2);
   resultDiv.classList.add('visible');
   resultContent.innerHTML = '<div class="progress-card" id="gen-progress-card">' +
     '<div class="progress-header"><span class="progress-title">生成进度</span></div>' +
@@ -912,6 +914,7 @@ generateBtn.addEventListener('click', async () => {
     if (!errorOccurred && fullContent) {
       saveHistory(problem, contestType, problemType, fullContent);
       saveDraft(problem, contestType, problemType, fullContent);
+      if (window.advanceStep) window.advanceStep(3);
     }
   } catch (e) {
     _activeController = null;
@@ -991,6 +994,7 @@ aiReportBtn.addEventListener('click', async () => {
 // Copy & Download
 // ============================================================
 document.getElementById('copy-btn').addEventListener('click', () => {
+  if (window.advanceStep) window.advanceStep(5);
   const text = resultContent.innerText;
   navigator.clipboard.writeText(text).then(() => {
     const btn = document.getElementById('copy-btn');
@@ -1198,6 +1202,7 @@ paperGenerateBtn.addEventListener('click', async () => {
     setTimeout(() => paperContent.classList.remove('completed'), 2500);
     if (!errorOccurred && fullContent) {
       savePaperHistory(problem, contestType, problemType, fullContent);
+      if (window.advanceStep) window.advanceStep(4);
       showToast('论文生成完成');
     }
   } catch (e) {
@@ -1249,6 +1254,7 @@ document.getElementById('paper-copy-btn').addEventListener('click', () => {
 
 // Paper PDF download (print to PDF)
 document.getElementById('paper-pdf-btn').addEventListener('click', () => {
+  if (window.advanceStep) window.advanceStep(5);
   window.print();
 });
 
