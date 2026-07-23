@@ -1,3 +1,5 @@
+import logging
+import os
 from flask import Flask, render_template, request, jsonify, Response, stream_with_context
 from src.prompts import (
     ROLES_INFO, SYSTEM_MCM_EN, SYSTEM_MCM_CN, SYSTEM_AI_REPORT,
@@ -20,11 +22,26 @@ from src.models_data import MODELS
 from src.problems_data import PROBLEMS
 from src.guide_data import GUIDE
 from src.scholar import search_by_keywords, format_references_apa
+import config  # load .env and provide DEEPSEEK_API_KEY fallback
 
 app = Flask(__name__)
+app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024  # 5MB 请求体限制
 
 from flask_cors import CORS
-CORS(app, supports_credentials=False)
+CORS(app, supports_credentials=False, origins=["https://math-modeling-assistant.up.railway.app"])
+
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
+
+limiter = Limiter(
+    app=app,
+    key_func=get_remote_address,
+    default_limits=["30 per minute", "300 per hour"],
+    storage_uri="memory://",
+)
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+logger = logging.getLogger(__name__)
 
 
 def _get_api_key():
@@ -33,8 +50,29 @@ def _get_api_key():
     if header_key:
         return header_key
     # Fallback: local .env for desktop builds
-    import os
     return os.environ.get("DEEPSEEK_API_KEY", "")
+
+
+def _get_language_config(contest_type):
+    """根据竞赛类型返回语言相关配置，消除各路由中的重复代码。"""
+    if contest_type == "CUMCM":
+        return {
+            "language_instruction": "使用中文撰写论文框架，按国赛格式。",
+            "language_block": "",
+            "abstract_note": "中文摘要 300 字左右，单独成页",
+            "ref_note": "建议引用 10-15 篇中文核心文献",
+            "system_prompt_template": SYSTEM_MCM_CN,
+            "paper_title_placeholder": "数学建模竞赛论文",
+        }
+    else:
+        return {
+            "language_instruction": "Write the complete paper in ENGLISH. Follow MCM/ICM standards strictly.",
+            "language_block": "**IMPORTANT: Generate the paper framework in ENGLISH. Follow MCM/ICM standards strictly.**",
+            "abstract_note": "English summary, 200-250 words, standalone page, NO formulas or citations",
+            "ref_note": "Suggest 15-20 authoritative English references in APA 7th edition",
+            "system_prompt_template": None,
+            "paper_title_placeholder": "MCM/ICM Competition Paper",
+        }
 
 
 # ===== Page Routes =====
@@ -127,6 +165,7 @@ def get_guide():
 # ===== API: Paper Generation =====
 
 @app.route("/api/generate", methods=["POST"])
+@limiter.limit("5 per minute")
 def generate():
     data = request.get_json()
     problem = data.get("problem", "").strip()
@@ -138,21 +177,15 @@ def generate():
     if not problem:
         return jsonify({"error": "请输入题目描述"}), 400
 
-    # Select system prompt based on contest type
-    if contest_type == "CUMCM":
-        system_prompt = SYSTEM_MCM_CN.format(
+    lc = _get_language_config(contest_type)
+    if lc["system_prompt_template"]:
+        system_prompt = lc["system_prompt_template"].format(
             contest_type="国赛 CUMCM",
             problem_type=problem_type,
-            language_instruction="使用中文撰写论文框架，按国赛格式。",
+            language_instruction=lc["language_instruction"],
         )
-        language_block = ""
-        abstract_note = "中文摘要 300 字左右，单独成页"
-        ref_note = "建议引用 10-15 篇中文核心文献"
     else:
         system_prompt = SYSTEM_MCM_EN
-        language_block = "**IMPORTANT: Generate the paper framework in ENGLISH. Follow MCM/ICM standards strictly.**"
-        abstract_note = "English summary, 200-250 words, standalone page, NO formulas or citations"
-        ref_note = "Suggest 15-20 authoritative English references in APA 7th edition"
 
     user_prompt = PAPER_PROMPT.format(
         contest_type=contest_type,
@@ -160,19 +193,21 @@ def generate():
         problem_category=problem_category,
         problem=problem,
         requirements=requirements or "无特殊要求",
-        language_block=language_block,
-        abstract_note=abstract_note,
-        ref_note=ref_note,
+        language_block=lc["language_block"],
+        abstract_note=lc["abstract_note"],
+        ref_note=lc["ref_note"],
     )
 
     try:
         result = generate_response(system_prompt, user_prompt, api_key=_get_api_key())
         return jsonify({"content": result})
     except Exception as e:
-        return jsonify({"error": f"生成失败: {str(e)}"}), 500
+        logger.error("generate failed: %s", e, exc_info=True)
+        return jsonify({"error": "生成失败，请稍后重试"}), 500
 
 
 @app.route("/api/generate/stream", methods=["POST"])
+@limiter.limit("3 per minute")
 def generate_stream_endpoint():
     data = request.get_json()
     problem = data.get("problem", "").strip()
@@ -184,20 +219,15 @@ def generate_stream_endpoint():
     if not problem:
         return jsonify({"error": "请输入题目描述"}), 400
 
-    if contest_type == "CUMCM":
-        system_prompt = SYSTEM_MCM_CN.format(
+    lc = _get_language_config(contest_type)
+    if lc["system_prompt_template"]:
+        system_prompt = lc["system_prompt_template"].format(
             contest_type="国赛 CUMCM",
             problem_type=problem_type,
-            language_instruction="使用中文撰写论文框架，按国赛格式。",
+            language_instruction=lc["language_instruction"],
         )
-        language_block = ""
-        abstract_note = "中文摘要 300 字左右，单独成页"
-        ref_note = "建议引用 10-15 篇中文核心文献"
     else:
         system_prompt = SYSTEM_MCM_EN
-        language_block = "**IMPORTANT: Generate the paper framework in ENGLISH. Follow MCM/ICM standards strictly.**"
-        abstract_note = "English summary, 200-250 words, standalone page, NO formulas or citations"
-        ref_note = "Suggest 15-20 authoritative English references in APA 7th edition"
 
     user_prompt = PAPER_PROMPT.format(
         contest_type=contest_type,
@@ -205,9 +235,9 @@ def generate_stream_endpoint():
         problem_category=problem_category,
         problem=problem,
         requirements=requirements or "无特殊要求",
-        language_block=language_block,
-        abstract_note=abstract_note,
-        ref_note=ref_note,
+        language_block=lc["language_block"],
+        abstract_note=lc["abstract_note"],
+        ref_note=lc["ref_note"],
     )
 
     def generate():
@@ -220,7 +250,8 @@ def generate_stream_endpoint():
                 yield '\n'
             yield "data: [DONE]\n\n"
         except Exception as e:
-            yield f"data: [ERROR] {e}\n\n"
+            logger.error("stream generation failed: %s", e, exc_info=True)
+            yield "data: [ERROR] 生成失败，请稍后重试\n\n"
 
     return Response(
         stream_with_context(generate()),
@@ -235,6 +266,7 @@ def generate_stream_endpoint():
 # ===== API: Full Paper Generation =====
 
 @app.route("/api/generate-paper/stream", methods=["POST"])
+@limiter.limit("2 per minute")
 def generate_paper_stream_endpoint():
     data = request.get_json()
     problem = data.get("problem", "").strip()
@@ -246,16 +278,10 @@ def generate_paper_stream_endpoint():
     if not problem:
         return jsonify({"error": "请输入题目描述"}), 400
 
-    if contest_type == "CUMCM":
-        language_instruction = "使用中文撰写完整论文，按国赛格式。"
-        language_block = ""
-    else:
-        language_instruction = "Write the complete paper in ENGLISH. Follow MCM/ICM standards strictly."
-        language_block = "**IMPORTANT: Generate the complete paper in ENGLISH.**"
-
+    lc = _get_language_config(contest_type)
     system_prompt = SYSTEM_PAPER.format(
         contest_type=contest_type,
-        language_instruction=language_instruction,
+        language_instruction=lc["language_instruction"],
     )
 
     user_prompt = PAPER_FULL_PROMPT.format(
@@ -264,8 +290,8 @@ def generate_paper_stream_endpoint():
         problem_category=problem_category,
         problem=problem,
         requirements=requirements or "无特殊要求",
-        language_block=language_block,
-        paper_title_or_placeholder="MCM/ICM Competition Paper" if contest_type != "CUMCM" else "数学建模竞赛论文",
+        language_block=lc["language_block"],
+        paper_title_or_placeholder=lc["paper_title_placeholder"],
         date=date.today().strftime("%B %d, %Y") if contest_type != "CUMCM" else date.today().strftime("%Y年%m月%d日"),
     )
 
@@ -277,7 +303,8 @@ def generate_paper_stream_endpoint():
                 yield '\n'
             yield "data: [DONE]\n\n"
         except Exception as e:
-            yield f"data: [ERROR] {e}\n\n"
+            logger.error("stream generation failed: %s", e, exc_info=True)
+            yield "data: [ERROR] 生成失败，请稍后重试\n\n"
 
     return Response(
         stream_with_context(generate()),
@@ -292,6 +319,7 @@ def generate_paper_stream_endpoint():
 # ===== API: AI Use Report =====
 
 @app.route("/api/ai-report", methods=["POST"])
+@limiter.limit("10 per minute")
 def ai_report():
     data = request.get_json()
     problem = data.get("problem", "").strip()
@@ -306,7 +334,8 @@ def ai_report():
         result = generate_response(SYSTEM_AI_REPORT, user_prompt, api_key=_get_api_key())
         return jsonify({"content": result})
     except Exception as e:
-        return jsonify({"error": f"生成失败: {str(e)}"}), 500
+        logger.error("generate failed: %s", e, exc_info=True)
+        return jsonify({"error": "生成失败，请稍后重试"}), 500
 
 
 # ===== API: LaTeX Template =====
@@ -329,6 +358,7 @@ def scholar_search():
 
 
 @app.route("/api/scholar/references", methods=["POST"])
+@limiter.limit("10 per minute")
 def scholar_references():
     data = request.get_json()
     titles = data.get("titles", [])
@@ -346,6 +376,7 @@ def scholar_references():
 # ===== API: Interactive Explanation =====
 
 @app.route("/api/explain", methods=["POST"])
+@limiter.limit("10 per minute")
 def explain_section():
     data = request.get_json()
     section_title = data.get("section_title", "").strip()
@@ -368,12 +399,14 @@ def explain_section():
         result = generate_response(SYSTEM_EXPLAIN, user_prompt, max_tokens=1500, api_key=_get_api_key())
         return jsonify({"content": result})
     except Exception as e:
-        return jsonify({"error": f"解释生成失败: {str(e)}"}), 500
+        logger.error("explain failed: %s", e, exc_info=True)
+        return jsonify({"error": "解释生成失败，请稍后重试"}), 500
 
 
 # ===== API: LaTeX Paper Generation =====
 
 @app.route("/api/generate-paper/latex", methods=["POST"])
+@limiter.limit("3 per minute")
 def generate_paper_latex():
     data = request.get_json()
     problem = data.get("problem", "").strip()
@@ -385,16 +418,10 @@ def generate_paper_latex():
     if not problem:
         return jsonify({"error": "请输入题目描述"}), 400
 
-    if contest_type == "CUMCM":
-        language_instruction = "使用中文撰写完整论文，按国赛格式。"
-        language_block = ""
-    else:
-        language_instruction = "Write the complete paper in ENGLISH. Follow MCM/ICM standards."
-        language_block = "**IMPORTANT: Generate the complete paper in ENGLISH.**"
-
+    lc = _get_language_config(contest_type)
     system_prompt = SYSTEM_PAPER.format(
         contest_type=contest_type,
-        language_instruction=language_instruction,
+        language_instruction=lc["language_instruction"],
     )
 
     user_prompt = PAPER_LATEX_PROMPT.format(
@@ -403,7 +430,7 @@ def generate_paper_latex():
         problem_category=problem_category,
         problem=problem,
         requirements=requirements or "无特殊要求",
-        language_block=language_block,
+        language_block=lc["language_block"],
     )
 
     def generate():
@@ -414,7 +441,8 @@ def generate_paper_latex():
                 yield '\n'
             yield "data: [DONE]\n\n"
         except Exception as e:
-            yield f"data: [ERROR] {e}\n\n"
+            logger.error("stream generation failed: %s", e, exc_info=True)
+            yield "data: [ERROR] 生成失败，请稍后重试\n\n"
 
     return Response(
         stream_with_context(generate()),
@@ -429,6 +457,7 @@ def generate_paper_latex():
 # ===== API: Reference Verification =====
 
 @app.route("/api/verify-references", methods=["POST"])
+@limiter.limit("10 per minute")
 def verify_references():
     data = request.get_json()
     content = data.get("content", "").strip()
@@ -500,6 +529,7 @@ def verify_references():
 # ===== API: Math Self-Consistency Check =====
 
 @app.route("/api/verify-math", methods=["POST"])
+@limiter.limit("10 per minute")
 def verify_math():
     data = request.get_json()
     content = data.get("content", "").strip()
@@ -540,12 +570,14 @@ Please provide a structured verification report."""
         result = generate_response(SYSTEM_MATH_VERIFY, user_prompt, max_tokens=2000, api_key=_get_api_key())
         return jsonify({"content": result})
     except Exception as e:
-        return jsonify({"error": f"数学验证失败: {str(e)}"}), 500
+        logger.error("math verify failed: %s", e, exc_info=True)
+        return jsonify({"error": "数学验证失败，请稍后重试"}), 500
 
 
 # ===== API: Plagiarism / Originality Check =====
 
 @app.route("/api/check-plagiarism", methods=["POST"])
+@limiter.limit("10 per minute")
 def check_plagiarism():
     data = request.get_json()
     content = data.get("content", "").strip()
@@ -569,12 +601,14 @@ Provide a section-by-section originality assessment with specific flagged passag
         result = generate_response(SYSTEM_PLAGIARISM, user_prompt, max_tokens=2000, api_key=_get_api_key())
         return jsonify({"content": result})
     except Exception as e:
-        return jsonify({"error": f"查重分析失败: {str(e)}"}), 500
+        logger.error("plagiarism check failed: %s", e, exc_info=True)
+        return jsonify({"error": "查重分析失败，请稍后重试"}), 500
 
 
 # ===== API: AI Deduplication / Paraphrasing =====
 
 @app.route("/api/deduplicate", methods=["POST"])
+@limiter.limit("10 per minute")
 def deduplicate():
     data = request.get_json()
     passages = data.get("passages", "").strip()
@@ -629,12 +663,14 @@ Please provide the complete rewritten paper that says the same thing differently
         result = generate_response(SYSTEM_DEDUP, user_prompt, max_tokens=3000, api_key=_get_api_key())
         return jsonify({"content": result, "mode": mode})
     except Exception as e:
-        return jsonify({"error": f"降重改写失败: {str(e)}"}), 500
+        logger.error("dedup failed: %s", e, exc_info=True)
+        return jsonify({"error": "降重改写失败，请稍后重试"}), 500
 
 
 # ===== API: Abstract Refinement =====
 
 @app.route("/api/refine-abstract", methods=["POST"])
+@limiter.limit("10 per minute")
 def refine_abstract():
     data = request.get_json()
     abstract = data.get("abstract", "").strip()
@@ -658,12 +694,14 @@ def refine_abstract():
         result = generate_response(SYSTEM_ABSTRACT_REFINE, user_prompt, max_tokens=2000, api_key=_get_api_key())
         return jsonify({"content": result})
     except Exception as e:
-        return jsonify({"error": f"摘要优化失败: {str(e)}"}), 500
+        logger.error("abstract refine failed: %s", e, exc_info=True)
+        return jsonify({"error": "摘要优化失败，请稍后重试"}), 500
 
 
 # ===== API: Sensitivity Analysis Code Generation =====
 
 @app.route("/api/generate-sensitivity", methods=["POST"])
+@limiter.limit("10 per minute")
 def generate_sensitivity():
     data = request.get_json()
     problem = data.get("problem", "").strip()
@@ -691,12 +729,14 @@ def generate_sensitivity():
         result = generate_response(SYSTEM_SENSITIVITY, user_prompt, max_tokens=3000, api_key=_get_api_key())
         return jsonify({"content": result})
     except Exception as e:
-        return jsonify({"error": f"敏感性分析生成失败: {str(e)}"}), 500
+        logger.error("sensitivity analysis failed: %s", e, exc_info=True)
+        return jsonify({"error": "敏感性分析生成失败，请稍后重试"}), 500
 
 
 # ===== API: AI Paper Scoring =====
 
 @app.route("/api/score-paper", methods=["POST"])
+@limiter.limit("10 per minute")
 def score_paper():
     data = request.get_json()
     content = data.get("content", "").strip()
@@ -720,12 +760,14 @@ def score_paper():
         result = generate_response(SYSTEM_PAPER_SCORING, user_prompt, max_tokens=2500, api_key=_get_api_key())
         return jsonify({"content": result})
     except Exception as e:
-        return jsonify({"error": f"论文评分失败: {str(e)}"}), 500
+        logger.error("paper scoring failed: %s", e, exc_info=True)
+        return jsonify({"error": "论文评分失败，请稍后重试"}), 500
 
 
 # ===== API: Smart Model Recommendation =====
 
 @app.route("/api/recommend-models", methods=["POST"])
+@limiter.limit("10 per minute")
 def recommend_models():
     data = request.get_json()
     problem = data.get("problem", "").strip()
@@ -751,12 +793,14 @@ def recommend_models():
         result = generate_response(SYSTEM_MODEL_RECOMMEND, user_prompt, max_tokens=2000, api_key=_get_api_key())
         return jsonify({"content": result})
     except Exception as e:
-        return jsonify({"error": f"模型推荐失败: {str(e)}"}), 500
+        logger.error("model recommend failed: %s", e, exc_info=True)
+        return jsonify({"error": "模型推荐失败，请稍后重试"}), 500
 
 
 # ===== API: Figure Suggestion =====
 
 @app.route("/api/suggest-figures", methods=["POST"])
+@limiter.limit("10 per minute")
 def suggest_figures():
     data = request.get_json()
     content = data.get("content", "").strip()
@@ -780,12 +824,14 @@ def suggest_figures():
         result = generate_response(SYSTEM_FIGURE_SUGGEST, user_prompt, max_tokens=3000, api_key=_get_api_key())
         return jsonify({"content": result})
     except Exception as e:
-        return jsonify({"error": f"图表建议生成失败: {str(e)}"}), 500
+        logger.error("figure suggest failed: %s", e, exc_info=True)
+        return jsonify({"error": "图表建议生成失败，请稍后重试"}), 500
 
 
 # ===== API: Paper Comparison =====
 
 @app.route("/api/compare-papers", methods=["POST"])
+@limiter.limit("10 per minute")
 def compare_papers():
     data = request.get_json()
     content_a = data.get("content_a", "").strip()
@@ -805,7 +851,8 @@ def compare_papers():
         result = generate_response(SYSTEM_PAPER_COMPARE, user_prompt, max_tokens=2500, api_key=_get_api_key())
         return jsonify({"content": result})
     except Exception as e:
-        return jsonify({"error": f"论文对比失败: {str(e)}"}), 500
+        logger.error("paper compare failed: %s", e, exc_info=True)
+        return jsonify({"error": "论文对比失败，请稍后重试"}), 500
 
 
 # ===== API: Key Check =====
@@ -830,6 +877,7 @@ def check_key():
 # ===== API: Mock COMAP Review =====
 
 @app.route("/api/mock-review", methods=["POST"])
+@limiter.limit("10 per minute")
 def mock_review():
     data = request.get_json()
     content = data.get("content", "").strip()
@@ -843,12 +891,14 @@ def mock_review():
         result = generate_response(SYSTEM_MOCK_REVIEW, user_prompt, max_tokens=3000, api_key=_get_api_key())
         return jsonify({"content": result})
     except Exception as e:
-        return jsonify({"error": f"模拟评审失败: {str(e)}"}), 500
+        logger.error("mock review failed: %s", e, exc_info=True)
+        return jsonify({"error": "模拟评审失败，请稍后重试"}), 500
 
 
 # ===== API: Winning Paper Analysis =====
 
 @app.route("/api/analyze-paper", methods=["POST"])
+@limiter.limit("10 per minute")
 def analyze_paper():
     if "file" not in request.files:
         return jsonify({"error": "请上传 PDF 文件"}), 400
@@ -882,7 +932,8 @@ def analyze_paper():
         result = generate_response(SYSTEM_PAPER_ANALYZE, user_prompt, max_tokens=3000, api_key=_get_api_key())
         return jsonify({"content": result})
     except Exception as e:
-        return jsonify({"error": f"论文分析失败: {str(e)}"}), 500
+        logger.error("paper analyze failed: %s", e, exc_info=True)
+        return jsonify({"error": "论文分析失败，请稍后重试"}), 500
 
 
 if __name__ == "__main__":

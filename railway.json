@@ -5,7 +5,6 @@
     "buildCommand": "pip install -r requirements.txt"
   },
   "deploy": {
-    "startCommand": "gunicorn app:app -b 0.0.0.0:$PORT -w 2 --timeout 120",
     "restartPolicyType": "ON_FAILURE"
   }
 }
