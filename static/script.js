@@ -2878,10 +2878,13 @@ function injectQuickActions() {
 }
 
 // ============================================================
-// Result Sidebar — slide-in panel for all quick action outputs
+// Result Sidebar — multi-tab slide-in panel with state persistence
 // ============================================================
 var _sidebarAbortController = null;
 var _actionLoadingTexts = {};
+var _sidebarTabs = [];           // {id, toolId, title, content, loadingStages, timestamp, meta: {}}
+var _sidebarActiveTabId = null;
+var _sidebarMinimized = false;
 
 function setActionLoading(btnId, loading) {
   var btn = document.getElementById(btnId);
@@ -2905,57 +2908,270 @@ function cancelSidebarAction() {
     _sidebarAbortController = null;
   }
   if (_sidebarProgressTimer) { clearInterval(_sidebarProgressTimer); _sidebarProgressTimer = null; }
-  updateSidebarContent('<p class="empty-state">操作已取消</p>');
+  // Mark current tab as cancelled
+  var tab = getActiveTab();
+  if (tab) { tab.content = '<p class="empty-state">操作已取消</p>'; tab.loadingStages = null; }
+  renderActiveTabContent();
   Object.keys(_actionLoadingTexts).forEach(function(id) { setActionLoading(id, false); });
 }
-function ensureSidebar() {
-  if (document.getElementById('result-sidebar')) return;
-  const backdrop = document.createElement('div');
-  backdrop.className = 'result-sidebar-backdrop';
-  backdrop.id = 'result-sidebar-backdrop';
-  backdrop.addEventListener('click', closeSidebar);
-  document.body.appendChild(backdrop);
 
-  const sidebar = document.createElement('div');
-  sidebar.className = 'result-sidebar';
-  sidebar.id = 'result-sidebar';
-  sidebar.innerHTML = `
-    <div class="result-sidebar-header">
-      <h3 id="sidebar-title">结果</h3>
-      <button class="close-btn" onclick="closeSidebar()">&times;</button>
-    </div>
-    <div class="result-sidebar-body" id="sidebar-body"></div>
-  `;
-  document.body.appendChild(sidebar);
+// ── Tab helpers ──
+
+function getActiveTab() {
+  if (!_sidebarActiveTabId) return null;
+  return _sidebarTabs.find(function(t) { return t.id === _sidebarActiveTabId; }) || null;
 }
 
-function openSidebar(title, htmlContent) {
-  ensureSidebar();
-  document.getElementById('sidebar-title').textContent = title;
-  document.getElementById('sidebar-body').innerHTML = htmlContent;
+function generateTabId() {
+  return 'stab_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+}
+
+function findTabByToolId(toolId) {
+  return _sidebarTabs.find(function(t) { return t.toolId === toolId; }) || null;
+}
+
+// Set a metadata key on a specific tab, and sync to DOM body if that tab is active
+function setTabMeta(tabId, key, value) {
+  var tab = _sidebarTabs.find(function(t) { return t.id === tabId; });
+  if (!tab) return;
+  tab.meta = tab.meta || {};
+  tab.meta[key] = value;
+  // Sync to live DOM only if this tab is currently visible
+  if (tabId === _sidebarActiveTabId) {
+    var body = document.getElementById('sidebar-body');
+    if (body) body.dataset[key] = value;
+  }
+}
+
+// Get a metadata key from a specific tab
+function getTabMeta(tabId, key) {
+  var tab = _sidebarTabs.find(function(t) { return t.id === tabId; });
+  if (!tab || !tab.meta) return undefined;
+  return tab.meta[key];
+}
+
+// Save per-tab body dataset to tab.meta / restore from tab.meta to body
+function _saveTabMeta() {
+  var tab = getActiveTab();
+  var body = document.getElementById('sidebar-body');
+  if (!tab || !body) return;
+  tab.meta = tab.meta || {};
+  // Copy all dataset keys from body to tab.meta
+  Object.keys(body.dataset).forEach(function(k) {
+    tab.meta[k] = body.dataset[k];
+  });
+}
+
+// Known dataset keys that our tools set on sidebar-body (for per-tab scoping)
+var _KNOWN_TAB_META_KEYS = ['originalContent', 'plagiarismReport', 'refResults', 'refReplacements', 'groundedContent'];
+
+function _restoreTabMeta() {
+  var tab = getActiveTab();
+  var body = document.getElementById('sidebar-body');
+  if (!tab || !body) return;
+  tab.meta = tab.meta || {};
+  // Clear known keys from body first
+  _KNOWN_TAB_META_KEYS.forEach(function(k) { delete body.dataset[k]; });
+  // Restore this tab's known keys
+  _KNOWN_TAB_META_KEYS.forEach(function(k) {
+    if (k in tab.meta) body.dataset[k] = tab.meta[k];
+  });
+}
+
+// ── Build / Update UI ──
+
+function ensureSidebar() {
+  if (document.getElementById('result-sidebar')) return;
+
+  var backdrop = document.createElement('div');
+  backdrop.className = 'result-sidebar-backdrop';
+  backdrop.id = 'result-sidebar-backdrop';
+  backdrop.addEventListener('click', function() { minimizeSidebar(); });
+  document.body.appendChild(backdrop);
+
+  var sidebar = document.createElement('div');
+  sidebar.className = 'result-sidebar';
+  sidebar.id = 'result-sidebar';
+  sidebar.innerHTML =
+    '<div class="sidebar-tab-strip" id="sidebar-tab-strip"></div>' +
+    '<div class="result-sidebar-header">' +
+      '<h3 id="sidebar-title">结果</h3>' +
+      '<div class="sidebar-header-actions">' +
+        '<button class="sidebar-minimize-btn" id="sidebar-minimize-btn" title="收起侧边栏" onclick="minimizeSidebar()">−</button>' +
+        '<button class="close-btn sidebar-close-btn" onclick="removeSidebar()" title="关闭侧边栏">&times;</button>' +
+      '</div>' +
+    '</div>' +
+    '<div class="result-sidebar-body" id="sidebar-body"></div>';
+  document.body.appendChild(sidebar);
+
+  // Restore persisted state
+  restoreSidebarState();
+}
+
+function renderTabStrip() {
+  var strip = document.getElementById('sidebar-tab-strip');
+  if (!strip) return;
+  strip.innerHTML = _sidebarTabs.map(function(t) {
+    var activeClass = t.id === _sidebarActiveTabId ? ' active' : '';
+    var label = escapeHtml((t.title || '结果').replace(/\(第\d+轮\)/g, '').slice(0, 12));
+    return '<div class="sidebar-tab' + activeClass + '" data-tab-id="' + t.id + '" onclick="switchSidebarTab(\'' + t.id + '\')" title="' + escapeHtml(t.title) + '">' +
+      '<span class="sidebar-tab-label">' + label + '</span>' +
+      '<button class="sidebar-tab-close" onclick="event.stopPropagation();closeSidebarTab(\'' + t.id + '\')" title="关闭">&times;</button>' +
+    '</div>';
+  }).join('') +
+  '<button class="sidebar-expand-pill" onclick="event.stopPropagation();restoreSidebar()" title="展开侧边栏">+</button>';
+}
+
+function renderActiveTabContent() {
+  var tab = getActiveTab();
+  var titleEl = document.getElementById('sidebar-title');
+  var bodyEl = document.getElementById('sidebar-body');
+  if (titleEl) titleEl.textContent = tab ? tab.title : '结果';
+  if (bodyEl) bodyEl.innerHTML = tab ? (tab.content || '') : '<p class="empty-state">选择一个工具开始</p>';
+}
+
+function openSidebarDOM() {
   document.getElementById('result-sidebar').classList.add('open');
   document.getElementById('result-sidebar-backdrop').classList.add('open');
+  _sidebarMinimized = false;
+  document.getElementById('result-sidebar').classList.remove('minimized');
+  persistSidebarState();
+}
+
+// ── Public API ──
+
+function openSidebar(title, htmlContent) {
+  // Quick open with static content — creates an ephemeral tab
+  ensureSidebar();
+  var tabId = generateTabId();
+  _sidebarTabs.push({ id: tabId, toolId: null, title: title, content: htmlContent, loadingStages: null, timestamp: Date.now(), meta: {} });
+  _sidebarActiveTabId = tabId;
+  renderTabStrip();
+  renderActiveTabContent();
+  openSidebarDOM();
 }
 
 function closeSidebar() {
-  document.getElementById('result-sidebar')?.classList.remove('open');
-  document.getElementById('result-sidebar-backdrop')?.classList.remove('open');
+  // Alias: minimize the sidebar
+  minimizeSidebar();
 }
+
+function minimizeSidebar() {
+  var sidebar = document.getElementById('result-sidebar');
+  if (!sidebar) return;
+  sidebar.classList.add('minimized');
+  sidebar.classList.remove('open');
+  document.getElementById('result-sidebar-backdrop')?.classList.remove('open');
+  _sidebarMinimized = true;
+  persistSidebarState();
+}
+
+function restoreSidebar() {
+  var sidebar = document.getElementById('result-sidebar');
+  if (!sidebar) return;
+  sidebar.classList.remove('minimized');
+  sidebar.classList.add('open');
+  document.getElementById('result-sidebar-backdrop')?.classList.add('open');
+  _sidebarMinimized = false;
+  persistSidebarState();
+}
+
+function removeSidebar() {
+  _sidebarTabs = [];
+  _sidebarActiveTabId = null;
+  _sidebarMinimized = false;
+  var sidebar = document.getElementById('result-sidebar');
+  var backdrop = document.getElementById('result-sidebar-backdrop');
+  if (sidebar) { sidebar.classList.remove('open', 'minimized'); }
+  if (backdrop) { backdrop.classList.remove('open'); }
+  if (_sidebarProgressTimer) { clearInterval(_sidebarProgressTimer); _sidebarProgressTimer = null; }
+  sessionStorage.removeItem('mma-sidebar-tabs');
+  sessionStorage.removeItem('mma-sidebar-active');
+  sessionStorage.removeItem('mma-sidebar-minimized');
+}
+
+// ── Tab switching ──
+
+function switchSidebarTab(tabId) {
+  if (_sidebarMinimized) {
+    restoreSidebar();
+  }
+  _saveTabMeta();
+  _sidebarActiveTabId = tabId;
+  renderTabStrip();
+  renderActiveTabContent();
+  _restoreTabMeta();
+  persistSidebarState();
+  // Scroll active tab into view in the strip
+  setTimeout(function() {
+    var activeTab = document.querySelector('.sidebar-tab.active');
+    if (activeTab) activeTab.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+  }, 50);
+}
+
+function closeSidebarTab(tabId) {
+  var idx = _sidebarTabs.findIndex(function(t) { return t.id === tabId; });
+  if (idx === -1) return;
+  _saveTabMeta();
+  _sidebarTabs.splice(idx, 1);
+
+  if (tabId === _sidebarActiveTabId) {
+    // Switch to adjacent tab
+    if (_sidebarTabs.length === 0) {
+      _sidebarActiveTabId = null;
+      removeSidebar();
+      return;
+    }
+    _sidebarActiveTabId = _sidebarTabs[Math.min(idx, _sidebarTabs.length - 1)].id;
+  }
+  renderTabStrip();
+  renderActiveTabContent();
+  _restoreTabMeta();
+  persistSidebarState();
+}
+
+// ── Loading & Content Update ──
 
 var _sidebarProgressTimer = null;
 var _sidebarProgressStages = [];
 var _sidebarProgressIdx = 0;
 
-function showSidebar(title, stages) {
+function showSidebar(title, stages, toolId) {
   ensureSidebar();
   if (_sidebarAbortController) _sidebarAbortController.abort();
   _sidebarAbortController = new AbortController();
-  document.getElementById('sidebar-title').textContent = title;
+
+  // Save current tab's meta before switching
+  _saveTabMeta();
+
+  // Find or create tab
+  var tab = toolId ? findTabByToolId(toolId) : null;
+  if (!tab) {
+    tab = { id: generateTabId(), toolId: toolId || null, title: title, content: '', loadingStages: stages || null, timestamp: Date.now(), meta: {} };
+    _sidebarTabs.push(tab);
+  } else {
+    tab.title = title;
+    tab.loadingStages = stages || null;
+    tab.timestamp = Date.now();
+    tab.meta = tab.meta || {};
+  }
+  _sidebarActiveTabId = tab.id;
+
+  // Build loading content
   _sidebarProgressStages = stages || ['分析中...'];
   _sidebarProgressIdx = 0;
-  document.getElementById('sidebar-body').innerHTML = '<div class="result-sidebar-loading"><div class="spinner"></div><span id="sidebar-progress-text">' + _sidebarProgressStages[0] + '</span><button class="btn-sm cancel-sidebar-btn" onclick="cancelSidebarAction()">取消</button></div>';
-  document.getElementById('result-sidebar').classList.add('open');
-  document.getElementById('result-sidebar-backdrop').classList.add('open');
+  tab.content = '<div class="result-sidebar-loading"><div class="spinner"></div><span id="sidebar-progress-text">' + _sidebarProgressStages[0] + '</span><button class="btn-sm cancel-sidebar-btn" onclick="cancelSidebarAction()">取消</button></div>';
+
+  renderTabStrip();
+  renderActiveTabContent();
+  openSidebarDOM();
+
+  // Scroll active tab into view in the strip
+  setTimeout(function() {
+    var activeTab = document.querySelector('.sidebar-tab.active');
+    if (activeTab) activeTab.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+  }, 100);
+
   // Progressive stage updates
   if (_sidebarProgressTimer) clearInterval(_sidebarProgressTimer);
   if (_sidebarProgressStages.length > 1) {
@@ -2970,6 +3186,8 @@ function showSidebar(title, stages) {
       }
     }, 2000);
   }
+
+  return tab.id;
 }
 
 function updateSidebarProgress(stage) {
@@ -2977,11 +3195,91 @@ function updateSidebarProgress(stage) {
   if (el) el.textContent = stage;
 }
 
-function updateSidebarContent(htmlContent) {
+function updateSidebarContent(htmlContent, optTabId) {
   if (_sidebarProgressTimer) { clearInterval(_sidebarProgressTimer); _sidebarProgressTimer = null; }
-  const body = document.getElementById('sidebar-body');
-  if (body) body.innerHTML = htmlContent;
+  // Find the target tab: explicit tabId takes priority, otherwise active tab
+  var targetTabId = optTabId || _sidebarActiveTabId;
+  var tab = _sidebarTabs.find(function(t) { return t.id === targetTabId; }) || null;
+  if (tab) {
+    tab.content = htmlContent;
+    tab.loadingStages = null;
+  }
+  // Only update the DOM body if the target tab is currently active
+  if (targetTabId === _sidebarActiveTabId) {
+    var body = document.getElementById('sidebar-body');
+    if (body) body.innerHTML = htmlContent;
+  }
+  // Defer persist via microtask so caller's synchronous dataset assignments run first
+  Promise.resolve().then(function() {
+    if (targetTabId === _sidebarActiveTabId) _saveTabMeta();
+    persistSidebarState();
+  });
 }
+
+// ── State Persistence (sessionStorage) ──
+
+function persistSidebarState() {
+  try {
+    var state = {
+      tabs: _sidebarTabs.map(function(t) {
+        return { id: t.id, toolId: t.toolId, title: t.title, content: t.content, timestamp: t.timestamp, meta: t.meta || {} };
+      }),
+      activeTabId: _sidebarActiveTabId,
+      minimized: _sidebarMinimized
+    };
+    sessionStorage.setItem('mma-sidebar-tabs', JSON.stringify(state));
+  } catch(e) {
+    // Storage full or unavailable — silently ignore
+  }
+}
+
+function restoreSidebarState() {
+  try {
+    var raw = sessionStorage.getItem('mma-sidebar-tabs');
+    if (!raw) return;
+    var state = JSON.parse(raw);
+    if (!state || !state.tabs || !state.tabs.length) return;
+
+    _sidebarTabs = state.tabs;
+    _sidebarActiveTabId = state.activeTabId;
+    _sidebarMinimized = state.minimized;
+
+    // Ensure active tab still exists
+    if (!_sidebarTabs.find(function(t) { return t.id === _sidebarActiveTabId; })) {
+      _sidebarActiveTabId = _sidebarTabs[0].id;
+    }
+
+    renderTabStrip();
+    renderActiveTabContent();
+    _restoreTabMeta();
+
+    if (_sidebarMinimized) {
+      document.getElementById('result-sidebar').classList.add('minimized');
+    } else {
+      document.getElementById('result-sidebar').classList.add('open');
+      document.getElementById('result-sidebar-backdrop').classList.add('open');
+    }
+  } catch(e) {
+    // Corrupted data — ignore
+  }
+}
+
+// Auto-restore minimized sidebar on page load if there are saved tabs
+(function initSidebarRestore() {
+  try {
+    var raw = sessionStorage.getItem('mma-sidebar-tabs');
+    if (!raw) return;
+    var state = JSON.parse(raw);
+    if (!state || !state.tabs || !state.tabs.length) return;
+    if (!state.minimized) return; // Only auto-show if previously minimized
+
+    // Delay so the page layout settles first
+    setTimeout(function() {
+      ensureSidebar();
+      // ensureSidebar calls restoreSidebarState which handles the rest
+    }, 800);
+  } catch(e) {}
+})();
 
 // ——— Edit Mode ———
 let editModeActive = false;
@@ -3056,7 +3354,7 @@ async function runPlagiarismCheck(textOverride, loopIteration) {
 
   if (!loopIteration) { _plagLoopCount = 0; }
   var title = loopIteration ? '原创性分析 (第' + loopIteration + '轮)' : '原创性分析';
-  showSidebar(title, ['正在提取文本片段...', '正在比对分析...', '正在生成查重报告...']);
+  var _tabId = showSidebar(title, ['正在提取文本片段...', '正在比对分析...', '正在生成查重报告...'], 'plagiarism-check');
   setActionLoading('qa-plagiarism-btn', true);
   updateSidebarProgress(loopIteration ? '第' + loopIteration + '轮查重 — AI 深度分析中...' : '正在提取文本片段...');
   try {
@@ -3068,7 +3366,7 @@ async function runPlagiarismCheck(textOverride, loopIteration) {
     });
     const data = await res.json();
     if (data.error) {
-      updateSidebarContent(`<p class="error-msg">${escapeHtml(data.error)}</p>`);
+      updateSidebarContent(`<p class="error-msg">${escapeHtml(data.error)}</p>`, _tabId);
     } else {
       var dedupHtml = `
         <div class="dedup-action-bar">
@@ -3082,21 +3380,21 @@ async function runPlagiarismCheck(textOverride, loopIteration) {
           <span class="loop-hint">已检查 ${_plagLoopCount + 1}/${_plagLoopMax} 轮 — 循环检查可提高准确性</span>
           <button class="btn-sm loop-btn" onclick="runPlagiarismCheck(null, ${_plagLoopCount + 2})">重新检查 (第${_plagLoopCount + 2}轮)</button>
         </div>` : '<div class="loop-check-bar"><span class="loop-hint" style="color:var(--green)">已完成 ' + _plagLoopMax + ' 轮深度检查</span></div>';
-      updateSidebarContent(`<div class="plagiarism-report-wrapper">${dedupHtml}${loopHtml}<div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">AI 辅助查重，结果仅供参考</div>${marked.parse(data.content)}</div>`);
-      document.getElementById('sidebar-body').dataset.originalContent = text;
-      document.getElementById('sidebar-body').dataset.plagiarismReport = data.content;
+      updateSidebarContent(`<div class="plagiarism-report-wrapper">${dedupHtml}${loopHtml}<div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">AI 辅助查重，结果仅供参考</div>${marked.parse(data.content)}</div>`, _tabId);
+      setTabMeta(_tabId, 'originalContent', text);
+      setTabMeta(_tabId, 'plagiarismReport', data.content);
       _plagLoopCount = loopIteration ? loopIteration : 1;
     }
-  } catch (e) { if (e.name !== 'AbortError') updateSidebarContent('<p class="error-msg">查重分析失败</p>'); }
-  finally { setActionLoading('qa-plagiarism-btn', false); _sidebarAbortController = null; }
+  } catch (e) { if (e.name !== 'AbortError') updateSidebarContent('<p class="error-msg">查重分析失败: ' + escapeHtml((e.message || '请检查网络连接').slice(0, 200)) + '</p>', _tabId); }
+  finally { setActionLoading('qa-plagiarism-btn', false); }
 }
 
 // Track current dedup mode for smart replace
 let _dedupMode = 'full';
 
 async function runDedup(mode) {
-  const sidebarBody = document.getElementById('sidebar-body');
-  const fullText = sidebarBody.dataset.originalContent || '';
+  const activeId = _sidebarActiveTabId;
+  const fullText = getTabMeta(activeId, 'originalContent') || '';
   if (!fullText.trim()) { showToast('没有可降重的文本'); return; }
 
   _dedupMode = mode;
@@ -3104,27 +3402,30 @@ async function runDedup(mode) {
   const fullBtn = document.getElementById('dedup-full-btn');
   const flaggedBtn = document.getElementById('dedup-flagged-btn');
 
-  let requestBody;
+  let endpoint, requestBody;
   if (mode === 'flagged') {
-    const report = sidebarBody.dataset.plagiarismReport || '';
+    const report = getTabMeta(activeId, 'plagiarismReport') || '';
     const quoted = report.match(/["""]([^"」""]{40,})["」""]/g);
     const flaggedText = quoted && quoted.length > 0
       ? quoted.map(q => q.replace(/["「""」]/g, '')).join('\n\n---\n\n')
       : '';
     if (!flaggedText) { showToast('未从查重报告中提取到高风险段落，请使用全文降重'); return; }
+    endpoint = '/api/deduplicate';
     requestBody = { mode: 'targeted', full_content: fullText, passages: flaggedText, contest_type: document.getElementById('paper-contest-type')?.value || 'MCM/ICM' };
   } else {
-    requestBody = { mode: 'full', passages: fullText, contest_type: document.getElementById('paper-contest-type')?.value || 'MCM/ICM' };
+    // Use AST-based layout-preserving dedup for full-text rewriting
+    endpoint = '/api/deduplicate-ast';
+    requestBody = { content: fullText, contest_type: document.getElementById('paper-contest-type')?.value || 'MCM/ICM' };
   }
 
   if (fullBtn) { fullBtn.disabled = true; fullBtn.textContent = '改写中...'; }
   if (flaggedBtn) { flaggedBtn.disabled = true; flaggedBtn.textContent = '改写中...'; }
   dedupResult.hidden = false;
-  dedupResult.innerHTML = '<div class="result-sidebar-loading"><div class="spinner"></div><span>' + (mode === 'flagged' ? 'AI 正在针对性改写高风险段落，其余内容保持不变...' : 'AI 正在改写全文，保留公式和数据...') + '</span></div>';
+  dedupResult.innerHTML = '<div class="result-sidebar-loading"><div class="spinner"></div><span>' + (mode === 'flagged' ? 'AI 正在针对性改写高风险段落，其余内容保持不变...' : 'AI 正在 AST 解析 → 隔离公式/图表/代码 → 改写纯文本 → 重新组装...') + '</span></div>';
   dedupResult.scrollIntoView({ behavior: 'smooth' });
 
   try {
-    const res = await fetch('/api/deduplicate', {
+    const res = await fetch(endpoint, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(requestBody),
     });
@@ -3133,8 +3434,8 @@ async function runDedup(mode) {
       dedupResult.innerHTML = `<p class="error-msg">${escapeHtml(data.error)}</p>`;
     } else {
       // Store the rewritten full content for replace
-      dedupResult.dataset.rewrittenContent = _stripCodeFences(data.content);
-      const label = mode === 'flagged' ? '针对性降重结果（仅高风险段落已改写，其余保持原文）' : '全文降重结果';
+      dedupResult.dataset.rewrittenContent = data.content;
+      const label = mode === 'flagged' ? '针对性降重结果（仅高风险段落已改写，其余保持原文）' : '全文降重结果（AST 无损 — 公式/图表/代码原样保留）';
       dedupResult.innerHTML = `
         <h3>${label}</h3>
         <div class="dedup-actions">
@@ -3142,10 +3443,11 @@ async function runDedup(mode) {
           <button class="btn-sm" onclick="replaceWithDedup(this)">${mode === 'flagged' ? '应用修改到原文' : '替换原文'}</button>
           ${mode === 'flagged' ? '<span style="font-size:11px;color:var(--text-secondary);margin-left:4px">仅替换高风险段落，其余内容不变</span>' : ''}
         </div>
+        ${data.note ? '<p style="font-size:12px;color:var(--text-secondary);margin-bottom:8px">' + escapeHtml(data.note) + '</p>' : ''}
         ${marked.parse(data.content)}`;
     }
   } catch (e) {
-    dedupResult.innerHTML = '<p class="error-msg">降重改写失败，请重试</p>';
+    dedupResult.innerHTML = '<p class="error-msg">降重改写失败: ' + escapeHtml((e.message || '请重试').slice(0, 200)) + '</p>';
   } finally {
     if (fullBtn) { fullBtn.disabled = false; fullBtn.textContent = '全文降重改写'; }
     if (flaggedBtn) { flaggedBtn.disabled = false; flaggedBtn.textContent = '仅改写高风险段落'; }
@@ -3228,7 +3530,7 @@ async function runReferenceCheck(textOverride, loopIteration) {
 
   if (!loopIteration) { _refLoopCount = 0; }
   var title = loopIteration ? '引用验证 (第' + loopIteration + '轮)' : '引用验证';
-  showSidebar(title, ['正在提取参考文献...', '正在检索 Semantic Scholar...', '正在生成验证报告...']);
+  var _tabId = showSidebar(title, ['正在提取参考文献...', '正在检索 Semantic Scholar...', '正在生成验证报告...'], 'reference-check');
   setActionLoading('qa-verify-refs-btn', true);
   updateSidebarProgress(loopIteration ? '第' + loopIteration + '轮验证 — 深度检索中...' : '正在提取参考文献...');
   try {
@@ -3239,10 +3541,11 @@ async function runReferenceCheck(textOverride, loopIteration) {
     });
     const data = await res.json();
     if (data.error) {
-      updateSidebarContent(`<p class="error-msg">${escapeHtml(data.error)}</p>`);
+      updateSidebarContent(`<p class="error-msg">${escapeHtml(data.error)}</p>`, _tabId);
     } else {
       var fakeCount = data.fake || 0;
       var replaceAllBtn = fakeCount > 0 ? `<button class="btn-sm" onclick="replaceAllFakeRefs()" style="background:var(--accent);color:#fff;border:none;margin-bottom:12px">一键替换虚假引用为真实文献</button>` : '';
+      var groundingBtn = fakeCount > 0 ? `<button class="btn-sm" onclick="runCitationGrounding()" style="background:var(--purple, #7c3aed);color:#fff;border:none;margin-bottom:12px;margin-left:6px">AI 自动修正 (RAG 检索)</button>` : '';
       var loopHtml = _refLoopCount < _refLoopMax - 1 ? `
         <div class="loop-check-bar">
           <span class="loop-hint">已验证 ${_refLoopCount + 1}/${_refLoopMax} 轮 — 循环验证可提高召回率</span>
@@ -3253,26 +3556,25 @@ async function runReferenceCheck(textOverride, loopIteration) {
           <span class="verify-stat verified">✓ ${data.verified} 条已验证</span>
           <span class="verify-stat fake">✗ ${data.fake} 条未找到</span>
         </div>
-        ${replaceAllBtn}
+        ${replaceAllBtn}${groundingBtn}
         ${loopHtml}
         ${data.results.map(function(r, i) { return `
           <div class="verify-ref-item ${r.status}">
             <div class="verify-ref-status">${r.status === 'verified' ? '✓ 已验证' : '✗ 未找到匹配'}</div>
             <div class="verify-ref-original"><strong>原文:</strong> ${escapeHtml(r.original).slice(0, 150)}</div>
             ${r.status === 'verified' ? '<div class="verify-ref-match"><strong>匹配:</strong> ' + escapeHtml(r.match_title) + (r.match_year ? ' (' + r.match_year + ')' : '') + (r.match_doi ? ' <a href="https://doi.org/' + r.match_doi + '" target="_blank" rel="noopener">DOI</a>' : '') + '</div>' : '<div class="verify-ref-match"><strong>建议:</strong> 此引用可能为 AI 生成，请手动检索真实文献替换 <button class="btn-sm" onclick="fixSingleRef(' + i + ')" style="margin-left:8px">查找真实引用</button></div>'}
-          </div>`; }).join('')}`);
-      // Store results for replace operations
-      document.getElementById('sidebar-body').dataset.refResults = JSON.stringify(data.results);
-      document.getElementById('sidebar-body').dataset.originalContent = text;
+          </div>`; }).join('')}`, _tabId);
+      setTabMeta(_tabId, 'refResults', JSON.stringify(data.results));
+      setTabMeta(_tabId, 'originalContent', text);
       _refLoopCount = loopIteration ? loopIteration : 1;
     }
-  } catch (e) { if (e.name !== 'AbortError') updateSidebarContent('<p class="error-msg">引用验证失败</p>'); }
-  finally { setActionLoading('qa-verify-refs-btn', false); _sidebarAbortController = null; }
+  } catch (e) { if (e.name !== 'AbortError') updateSidebarContent('<p class="error-msg">引用验证失败: ' + escapeHtml((e.message || '请检查网络连接').slice(0, 200)) + '</p>', _tabId); }
+  finally { setActionLoading('qa-verify-refs-btn', false); }
 }
 
 async function fixSingleRef(index) {
-  var sidebarBody = document.getElementById('sidebar-body');
-  var results = JSON.parse(sidebarBody.dataset.refResults || '[]');
+  var activeId = _sidebarActiveTabId;
+  var results = JSON.parse(getTabMeta(activeId, 'refResults') || '[]');
   var ref = results[index];
   if (!ref) return;
   updateSidebarProgress('正在检索真实文献替代方案...');
@@ -3291,10 +3593,9 @@ async function fixSingleRef(index) {
         el.querySelector('.verify-ref-match').innerHTML = '<strong>替换建议:</strong> ' + escapeHtml(match.match_title || '') + (match.match_authors && match.match_authors.length ? ' (' + match.match_authors.join(', ') + ')' : '') + (match.match_year ? ', ' + match.match_year : '') + ' <button class="btn-sm" onclick="applyRefReplacement(' + index + ')" style="margin-left:8px;background:var(--green);color:#fff;border:none">应用替换</button>';
       }
       // Store replacement data
-      if (!sidebarBody.dataset.refReplacements) sidebarBody.dataset.refReplacements = '{}';
-      var replacements = JSON.parse(sidebarBody.dataset.refReplacements);
+      var replacements = JSON.parse(getTabMeta(activeId, 'refReplacements') || '{}');
       replacements[index] = { original: ref.original, replacement: match.match_title, authors: match.match_authors, year: match.match_year, doi: match.match_doi };
-      sidebarBody.dataset.refReplacements = JSON.stringify(replacements);
+      setTabMeta(activeId, 'refReplacements', JSON.stringify(replacements));
     } else {
       showToast('未找到匹配的真实文献，请手动检索');
     }
@@ -3302,8 +3603,8 @@ async function fixSingleRef(index) {
 }
 
 function applyRefReplacement(index) {
-  var sidebarBody = document.getElementById('sidebar-body');
-  var replacements = JSON.parse(sidebarBody.dataset.refReplacements || '{}');
+  var activeId = _sidebarActiveTabId;
+  var replacements = JSON.parse(getTabMeta(activeId, 'refReplacements') || '{}');
   var replacement = replacements[index];
   if (!replacement) { showToast('没有可用的替换'); return; }
   var resultContent = getActiveContent();
@@ -3337,14 +3638,14 @@ function applyRefReplacement(index) {
   }
   showToast('已替换虚假引用: ' + replacement.replacement.slice(0, 40) + '...');
   // Refresh the reference check results
-  var results = JSON.parse(sidebarBody.dataset.refResults || '[]');
+  var results = JSON.parse(getTabMeta(activeId, 'refResults') || '[]');
   if (results[index]) {
     results[index].status = 'verified';
     results[index].match_title = replacement.replacement;
     results[index].match_authors = replacement.authors || [];
     results[index].match_year = replacement.year;
     results[index].match_doi = replacement.doi || '';
-    sidebarBody.dataset.refResults = JSON.stringify(results);
+    setTabMeta(activeId, 'refResults', JSON.stringify(results));
     var el = document.querySelectorAll('.verify-ref-item')[index];
     if (el) {
       el.className = 'verify-ref-item verified';
@@ -3392,8 +3693,8 @@ function _replaceTextInDOM(root, searchText, replacementText) {
 }
 
 function replaceAllFakeRefs() {
-  var sidebarBody = document.getElementById('sidebar-body');
-  var results = JSON.parse(sidebarBody.dataset.refResults || '[]');
+  var activeId = _sidebarActiveTabId;
+  var results = JSON.parse(getTabMeta(activeId, 'refResults') || '[]');
   var fakeIndices = [];
   results.forEach(function(r, i) { if (r.status !== 'verified') fakeIndices.push(i); });
   if (fakeIndices.length === 0) { showToast('所有引用已验证'); return; }
@@ -3403,13 +3704,127 @@ function replaceAllFakeRefs() {
   });
 }
 
+// ── RAG Citation Grounding (NotebookLM-style autonomous agent) ──
+
+async function runCitationGrounding() {
+  var activeId = _sidebarActiveTabId;
+  var fullText = getTabMeta(activeId, 'originalContent') || '';
+  if (!fullText.trim()) { showToast('没有可验证的内容'); return; }
+
+  showToast('AI 正在自主检索并修正引用 (这可能需要 1-2 分钟)...');
+  updateSidebarProgress('正在提取引用 → 搜索 Crossref/Semantic Scholar → AI 自主验证...');
+
+  try {
+    var res = await fetch('/api/ground-citations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: fullText }),
+    });
+    var data = await res.json();
+
+    if (data.error) {
+      updateSidebarContent('<p class="error-msg">' + escapeHtml(data.error) + '</p>', activeId);
+      return;
+    }
+
+    // Build result display with before/after diff
+    var correctionsHtml = '';
+    var correctedCount = 0;
+    if (data.corrections && data.corrections.length > 0) {
+      data.corrections.forEach(function(c) { if (c.is_corrected) correctedCount++; });
+      correctionsHtml = '<div style="margin-top:12px">' +
+        '<div class="corrections-summary">' +
+          '<span class="verify-stat verified">✓ ' + correctedCount + ' 条引用已修正</span>' +
+          (data.corrections.length - correctedCount > 0 ? '<span class="verify-stat fake">✗ ' + (data.corrections.length - correctedCount) + ' 条未能修正</span>' : '') +
+        '</div>' +
+        '<p style="font-size:12px;color:var(--text-secondary);margin:8px 0">以下为每条修正的前后对比，<span style="color:#dc2626">红色</span>为原文，<span style="color:#16a34a">绿色</span>为修正后：</p>';
+
+      data.corrections.forEach(function(c, i) {
+        if (c.is_corrected) {
+          correctionsHtml += '<div class="citation-diff-card">' +
+            '<div class="citation-diff-header">[' + escapeHtml(c.ref_id || ('#' + (i + 1))) + '] 引用修正</div>' +
+            '<div class="citation-diff-row citation-diff-old">' +
+              '<span class="citation-diff-label">旧</span>' +
+              '<span class="citation-diff-text">' + escapeHtml(c.old_text || '') + '</span>' +
+            '</div>' +
+            '<div class="citation-diff-arrow">↓ 替换为 ↓</div>' +
+            '<div class="citation-diff-row citation-diff-new">' +
+              '<span class="citation-diff-label">新</span>' +
+              '<span class="citation-diff-text">' + escapeHtml(c.new_text || '') + '</span>' +
+            '</div>' +
+            '</div>';
+        } else if (c.old_text) {
+          correctionsHtml += '<div class="citation-diff-card citation-diff-uncorrected">' +
+            '<div class="citation-diff-header">[' + escapeHtml(c.ref_id || ('#' + (i + 1))) + '] 未能修正 — 建议手动核查</div>' +
+            '<div class="citation-diff-row citation-diff-old">' +
+              '<span class="citation-diff-label">原文</span>' +
+              '<span class="citation-diff-text">' + escapeHtml(c.old_text).slice(0, 200) + '</span>' +
+            '</div>' +
+            '</div>';
+        }
+      });
+      correctionsHtml += '</div>';
+    }
+
+    updateSidebarContent(
+      '<h3>RAG 引用修正报告</h3>' +
+      marked.parse(data.summary || '') +
+      correctionsHtml +
+      '<div style="margin-top:12px"><button class="btn-sm" onclick="replaceWithGroundedRefs(this)" style="background:var(--accent);color:#fff;border:none">应用修正到原文</button></div>',
+      activeId
+    );
+
+    setTabMeta(activeId, 'groundedContent', data.content);
+  } catch (e) {
+    updateSidebarContent('<p class="error-msg">RAG 引用修正失败: ' + escapeHtml((e.message || '请重试').slice(0, 200)) + '</p>', activeId);
+  }
+}
+
+function replaceWithGroundedRefs(btn) {
+  if (btn && btn.disabled) return;
+  if (btn) { btn.disabled = true; btn.textContent = '替换中...'; }
+
+  var groundedContent = getTabMeta(_sidebarActiveTabId, 'groundedContent') || '';
+  if (!groundedContent.trim()) { showToast('没有可替换的内容'); if (btn) btn.disabled = false; return; }
+
+  var resultContent = getActiveContent();
+  if (!resultContent) { if (btn) btn.disabled = false; return; }
+
+  if (editModeActive) {
+    var textarea = document.getElementById('edit-textarea');
+    if (textarea) {
+      textarea.value = groundedContent;
+      showToast('已替换编辑区内容');
+    }
+  } else {
+    resultContent.style.transition = 'opacity .12s ease';
+    resultContent.style.opacity = '0';
+    setTimeout(function() {
+      renderTo(resultContent, groundedContent);
+      injectCodeCopyButtons(resultContent);
+      injectDisclaimer(resultContent);
+      injectVerificationChecklist(resultContent);
+      injectExplainButtons(resultContent);
+      buildTOC(resultContent);
+      injectDataSourceHighlights(resultContent);
+      if (typeof renderMathInElement !== 'undefined') {
+        try { renderMathInElement(resultContent, {delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false},{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}],throwOnError:false}); } catch(e) {}
+      }
+      resultContent.style.opacity = '1';
+      setTimeout(function() { resultContent.style.transition = ''; }, 150);
+      if (btn) { btn.disabled = false; btn.textContent = '应用修正到原文'; }
+    }, 130);
+    showToast('已应用引用修正');
+  }
+}
+
 async function runMathCheck() {
   const btn = document.getElementById('qa-verify-math-btn');
   const resultContent = getActiveContent();
   const text = resultContent ? resultContent.innerText : '';
   if (!text.trim()) { showToast('没有可验证的内容'); return; }
 
-  showSidebar('数学推导验证', ['正在提取公式...', '正在独立推导验证...', '正在生成验证报告...']);
+  var _tabId = showSidebar('数学推导验证', ['正在提取公式...', '正在独立推导验证...', '正在生成验证报告...'], 'math-check');
   setActionLoading('qa-verify-math-btn', true);
   try {
     const res = await fetch('/api/verify-math', {
@@ -3420,9 +3835,9 @@ async function runMathCheck() {
     const data = await res.json();
     updateSidebarContent(data.error
       ? `<p class="error-msg">${escapeHtml(data.error)}</p>`
-      : `<h3>数学推导验证报告</h3><div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">独立复核结果，请逐项核实</div>${marked.parse(data.content)}`);
-  } catch (e) { if (e.name !== 'AbortError') updateSidebarContent('<p class="error-msg">数学验证失败</p>'); }
-  finally { setActionLoading('qa-verify-math-btn', false); _sidebarAbortController = null; }
+      : `<h3>数学推导验证报告</h3><div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">独立复核结果，请逐项核实</div>${marked.parse(data.content)}`, _tabId);
+  } catch (e) { if (e.name !== 'AbortError') updateSidebarContent('<p class="error-msg">数学验证失败: ' + escapeHtml((e.message || '请检查网络连接').slice(0, 200)) + '</p>', _tabId); }
+  finally { setActionLoading('qa-verify-math-btn', false); }
 }
 
 // ============================================================
@@ -3438,7 +3853,7 @@ async function runAbstractRefine() {
   const absMatch = text.match(/(?:Abstract|摘要|Summary)[\s\S]{0,3000}/i);
   const abstract = absMatch ? absMatch[0].slice(0, 3000) : text.slice(0, 3000);
 
-  showSidebar('摘要精修', ['正在分析摘要结构...', '正在对照 COMAP 标准...', '正在生成精修建议...']);
+  var _tabId = showSidebar('摘要精修', ['正在分析摘要结构...', '正在对照 COMAP 标准...', '正在生成精修建议...'], 'abstract-refine');
   setActionLoading('qa-abstract-btn', true);
   try {
     const contestType = document.getElementById('paper-contest-type')?.value || 'MCM/ICM';
@@ -3450,9 +3865,9 @@ async function runAbstractRefine() {
     const data = await res.json();
     updateSidebarContent(data.error
       ? `<p class="error-msg">${escapeHtml(data.error)}</p>`
-      : `<h3>摘要精修报告</h3><div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">按 COMAP 标准逐条审查</div>${marked.parse(data.content)}`);
-  } catch (e) { if (e.name !== 'AbortError') updateSidebarContent('<p class="error-msg">摘要分析失败</p>'); }
-  finally { setActionLoading('qa-abstract-btn', false); _sidebarAbortController = null; }
+      : `<h3>摘要精修报告</h3><div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">按 COMAP 标准逐条审查</div>${marked.parse(data.content)}`, _tabId);
+  } catch (e) { if (e.name !== 'AbortError') updateSidebarContent('<p class="error-msg">摘要分析失败: ' + escapeHtml((e.message || '请检查网络连接').slice(0, 200)) + '</p>', _tabId); }
+  finally { setActionLoading('qa-abstract-btn', false); }
 }
 
 // ============================================================
@@ -3468,7 +3883,7 @@ async function runSensitivityAnalysis() {
   const modelDesc = modelMatch ? modelMatch[0].slice(0, 3000) : text.slice(0, 2000);
   const problem = document.getElementById('paper-problem')?.value.trim() || 'the mathematical modeling problem';
 
-  showSidebar('敏感性分析代码', ['正在提取模型参数...', '正在生成分析代码...', '正在验证参数范围...']);
+  var _tabId = showSidebar('敏感性分析代码', ['正在提取模型参数...', '正在生成分析代码...', '正在验证参数范围...'], 'sensitivity');
   setActionLoading('qa-sensitivity-btn', true);
   try {
     const contestType = document.getElementById('paper-contest-type')?.value || 'MCM/ICM';
@@ -3481,10 +3896,10 @@ async function runSensitivityAnalysis() {
     let html = data.error
       ? `<p class="error-msg">${escapeHtml(data.error)}</p>`
       : `<h3>敏感性分析代码</h3><div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">自动生成的敏感性分析 Python 代码</div>${marked.parse(data.content)}`;
-    updateSidebarContent(html);
+    updateSidebarContent(html, _tabId);
     setTimeout(function() { injectCodeCopyButtons(document.getElementById('sidebar-body')); }, 100);
-  } catch (e) { if (e.name !== 'AbortError') updateSidebarContent('<p class="error-msg">敏感性分析生成失败</p>'); }
-  finally { setActionLoading('qa-sensitivity-btn', false); _sidebarAbortController = null; }
+  } catch (e) { if (e.name !== 'AbortError') updateSidebarContent('<p class="error-msg">敏感性分析生成失败: ' + escapeHtml((e.message || '请检查网络连接').slice(0, 200)) + '</p>', _tabId); }
+  finally { setActionLoading('qa-sensitivity-btn', false); }
 }
 
 // ============================================================
@@ -3496,7 +3911,7 @@ async function runPaperScore() {
   const text = resultContent ? resultContent.innerText : '';
   if (!text.trim()) { showToast('没有可评分的论文内容'); return; }
 
-  showSidebar('论文评审报告', ['正在评估创新性...', '正在评估表达质量...', '正在评估建模严谨性...', '正在生成评分报告...']);
+  var _tabId = showSidebar('论文评审报告', ['正在评估创新性...', '正在评估表达质量...', '正在评估建模严谨性...', '正在生成评分报告...'], 'paper-score');
   setActionLoading('qa-score-btn', true);
   try {
     const contestType = document.getElementById('paper-contest-type')?.value || 'MCM/ICM';
@@ -3508,9 +3923,9 @@ async function runPaperScore() {
     const data = await res.json();
     updateSidebarContent(data.error
       ? `<p class="error-msg">${escapeHtml(data.error)}</p>`
-      : `<h3>论文评审报告</h3><div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">按 COMAP 标准评分 (创新40% + 表达30% + 建模30%)</div>${marked.parse(data.content)}`);
-  } catch (e) { if (e.name !== 'AbortError') updateSidebarContent('<p class="error-msg">论文评分失败</p>'); }
-  finally { setActionLoading('qa-score-btn', false); _sidebarAbortController = null; }
+      : `<h3>论文评审报告</h3><div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">按 COMAP 标准评分 (创新40% + 表达30% + 建模30%)</div>${marked.parse(data.content)}`, _tabId);
+  } catch (e) { if (e.name !== 'AbortError') updateSidebarContent('<p class="error-msg">论文评分失败: ' + escapeHtml((e.message || '请检查网络连接').slice(0, 200)) + '</p>', _tabId); }
+  finally { setActionLoading('qa-score-btn', false); }
 }
 
 // ============================================================
@@ -3522,7 +3937,7 @@ async function runFigureSuggest() {
   const text = resultContent ? resultContent.innerText : '';
   if (!text.trim()) { showToast('没有可分析的论文内容'); return; }
 
-  showSidebar('图表建议', ['正在分析论文结构...', '正在匹配图表类型...', '正在生成 Matplotlib 代码...']);
+  var _tabId = showSidebar('图表建议', ['正在分析论文结构...', '正在匹配图表类型...', '正在生成 Matplotlib 代码...'], 'figure-suggest');
   setActionLoading('qa-figures-btn', true);
   try {
     const contestType = document.getElementById('paper-contest-type')?.value || 'MCM/ICM';
@@ -3535,10 +3950,10 @@ async function runFigureSuggest() {
     let html = data.error
       ? `<p class="error-msg">${escapeHtml(data.error)}</p>`
       : `<h3>图表建议与代码</h3><div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">论文各章节推荐图表及其 matplotlib 代码</div>${marked.parse(data.content)}`;
-    updateSidebarContent(html);
+    updateSidebarContent(html, _tabId);
     setTimeout(function() { injectCodeCopyButtons(document.getElementById('sidebar-body')); }, 100);
-  } catch (e) { if (e.name !== 'AbortError') updateSidebarContent('<p class="error-msg">图表建议生成失败</p>'); }
-  finally { setActionLoading('qa-figures-btn', false); _sidebarAbortController = null; }
+  } catch (e) { if (e.name !== 'AbortError') updateSidebarContent('<p class="error-msg">图表建议生成失败: ' + escapeHtml((e.message || '请检查网络连接').slice(0, 200)) + '</p>', _tabId); }
+  finally { setActionLoading('qa-figures-btn', false); }
 }
 
 // ============================================================
@@ -3550,7 +3965,7 @@ async function runMockReview() {
   const content = resultContent ? resultContent.innerText : '';
   if (!content.trim()) { showToast('没有可评审的内容'); return; }
 
-  showSidebar('模拟评审', ['正在阅读全文...', '正在评估创新性...', '正在检查表达质量...', '正在生成评审意见...']);
+  var _tabId = showSidebar('模拟评审', ['正在阅读全文...', '正在评估创新性...', '正在检查表达质量...', '正在生成评审意见...'], 'mock-review');
   setActionLoading('qa-review-btn', true);
   try {
     const res = await fetch('/api/mock-review', {
@@ -3559,9 +3974,9 @@ async function runMockReview() {
       signal: _sidebarAbortController?.signal,
     });
     const data = await res.json();
-    updateSidebarContent(data.error ? `<p class="error-msg">${escapeHtml(data.error)}</p>` : marked.parse(data.content));
-  } catch (e) { if (e.name !== 'AbortError') updateSidebarContent('<p class="error-msg">模拟评审失败</p>'); }
-  finally { setActionLoading('qa-review-btn', false); _sidebarAbortController = null; }
+    updateSidebarContent(data.error ? `<p class="error-msg">${escapeHtml(data.error)}</p>` : marked.parse(data.content), _tabId);
+  } catch (e) { if (e.name !== 'AbortError') updateSidebarContent('<p class="error-msg">模拟评审失败: ' + escapeHtml((e.message || '请检查网络连接').slice(0, 200)) + '</p>', _tabId); }
+  finally { setActionLoading('qa-review-btn', false); }
 }
 
 // ============================================================
@@ -3579,7 +3994,7 @@ async function runPaperCompare() {
     return;
   }
 
-  showSidebar('论文对比', ['正在提取各版本内容...', '正在逐项对比分析...', '正在生成对比报告...']);
+  var _tabId = showSidebar('论文对比', ['正在提取各版本内容...', '正在逐项对比分析...', '正在生成对比报告...'], 'paper-compare');
   setActionLoading('qa-compare-btn', true);
   try {
     const contestType = document.getElementById('paper-contest-type')?.value || 'MCM/ICM';
@@ -3591,9 +4006,9 @@ async function runPaperCompare() {
     const data = await res.json();
     updateSidebarContent(data.error
       ? `<p class="error-msg">${escapeHtml(data.error)}</p>`
-      : `<h3>论文对比报告</h3><div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">当前版本 vs 上一版 (${escapeHtml(history[0].problem).slice(0, 60)}...)</div>${marked.parse(data.content)}`);
-  } catch (e) { if (e.name !== 'AbortError') updateSidebarContent('<p class="error-msg">论文对比失败</p>'); }
-  finally { setActionLoading('qa-compare-btn', false); _sidebarAbortController = null; }
+      : `<h3>论文对比报告</h3><div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">当前版本 vs 上一版 (${escapeHtml(history[0].problem).slice(0, 60)}...)</div>${marked.parse(data.content)}`, _tabId);
+  } catch (e) { if (e.name !== 'AbortError') updateSidebarContent('<p class="error-msg">论文对比失败: ' + escapeHtml((e.message || '请检查网络连接').slice(0, 200)) + '</p>', _tabId); }
+  finally { setActionLoading('qa-compare-btn', false); }
 }
 
 // ============================================================

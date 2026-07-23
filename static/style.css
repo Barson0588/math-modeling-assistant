@@ -1868,6 +1868,92 @@ footer { text-align: center; padding: 24px; color: var(--text-secondary); font-s
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* ── Multi-tab Sidebar ── */
+
+.sidebar-tab-strip {
+  display: flex; align-items: center; gap: 4px;
+  padding: 8px 12px; overflow-x: auto; overflow-y: hidden;
+  background: var(--bg); border-bottom: 1px solid var(--border);
+  flex-shrink: 0; scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.sidebar-tab-strip::-webkit-scrollbar { display: none; }
+
+.sidebar-tab {
+  display: flex; align-items: center; gap: 2px;
+  padding: 5px 8px 5px 10px; border-radius: 16px;
+  background: var(--surface); border: 1px solid var(--border);
+  cursor: pointer; white-space: nowrap; font-size: 12px;
+  font-weight: 500; color: var(--text-secondary);
+  transition: all .15s ease; flex-shrink: 0; user-select: none;
+}
+.sidebar-tab:hover { background: var(--accent-light); color: var(--text); border-color: var(--accent); }
+.sidebar-tab.active {
+  background: var(--accent); color: #fff; border-color: var(--accent);
+  font-weight: 600;
+}
+.sidebar-tab-label { max-width: 90px; overflow: hidden; text-overflow: ellipsis; }
+
+.sidebar-tab-close {
+  width: 16px; height: 16px; border: none; background: transparent;
+  color: inherit; opacity: .5; cursor: pointer; font-size: 13px;
+  line-height: 16px; text-align: center; padding: 0; border-radius: 50%;
+  transition: opacity .15s; flex-shrink: 0;
+}
+.sidebar-tab-close:hover { opacity: 1; background: rgba(0,0,0,.15); }
+.sidebar-tab.active .sidebar-tab-close:hover { background: rgba(255,255,255,.25); }
+
+/* Header actions row */
+.sidebar-header-actions {
+  display: flex; align-items: center; gap: 6px;
+}
+.sidebar-minimize-btn {
+  width: 28px; height: 28px; border: none; background: var(--bg);
+  border-radius: 50%; cursor: pointer; font-size: 18px; line-height: 28px;
+  text-align: center; color: var(--text-secondary); transition: all .15s;
+  font-weight: 700;
+}
+.sidebar-minimize-btn:hover { background: var(--border); color: var(--text); }
+
+/* Minimized state — collapses to floating tab strip */
+.result-sidebar.minimized {
+  transform: translateX(0) !important;
+  top: 78px; right: 16px; bottom: auto; left: auto;
+  width: auto; height: auto; min-height: unset;
+  max-width: calc(100vw - 32px);
+  border-radius: 12px;
+  box-shadow: 0 4px 24px rgba(0,0,0,.18);
+}
+.result-sidebar.minimized .result-sidebar-header,
+.result-sidebar.minimized .result-sidebar-body { display: none; }
+.result-sidebar.minimized .sidebar-tab-strip {
+  border-bottom: none; border-radius: 12px;
+  padding: 6px 10px; gap: 4px;
+}
+
+/* Expand button at end of minimized strip */
+.sidebar-expand-pill {
+  display: none; width: 26px; height: 26px; background: var(--accent);
+  color: #fff; border: none; border-radius: 50%; cursor: pointer;
+  font-size: 16px; font-weight: 700; line-height: 26px; text-align: center;
+  flex-shrink: 0; transition: background .15s;
+}
+.sidebar-expand-pill:hover { background: var(--accent-hover); }
+.result-sidebar.minimized .sidebar-expand-pill { display: inline-block; }
+
+/* Dark mode: minimized floating bar glow */
+[data-theme="dark"] .result-sidebar.minimized {
+  box-shadow: 0 4px 24px rgba(0,0,0,.5);
+}
+
+/* Mobile: full-width tab strip */
+@media (max-width: 768px) {
+  .sidebar-tab-strip { padding: 6px 8px; gap: 3px; }
+  .sidebar-tab { padding: 4px 7px; font-size: 11px; }
+  .sidebar-tab-label { max-width: 60px; }
+}
+
 /* Edit mode indicator */
 /* Dedup action bar inside plagiarism sidebar */
 .dedup-action-bar {
@@ -1906,6 +1992,41 @@ footer { text-align: center; padding: 24px; color: var(--text-secondary); font-s
 .dedup-actions .btn-sm:last-child { background: var(--accent); }
 .dedup-actions .btn-sm:last-child:hover { background: var(--accent-hover); }
 .dedup-result .code-block-wrapper { margin: 12px 0; }
+
+/* Citation grounding diff cards */
+.corrections-summary { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.citation-diff-card {
+  border: 1px solid var(--border); border-radius: 8px;
+  margin-bottom: 12px; overflow: hidden;
+}
+.citation-diff-header {
+  padding: 8px 14px; background: var(--accent-light);
+  font-size: 13px; font-weight: 700; border-bottom: 1px solid var(--border);
+}
+.citation-diff-row {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 10px 14px; font-size: 13px; line-height: 1.5;
+}
+.citation-diff-label {
+  flex-shrink: 0; width: 28px; height: 22px; border-radius: 5px;
+  text-align: center; line-height: 22px; font-size: 11px;
+  font-weight: 700; color: #fff; margin-top: 1px;
+}
+.citation-diff-old { background: #fef2f2; }
+.citation-diff-old .citation-diff-label { background: #dc2626; }
+.citation-diff-new { background: #f0fdf4; }
+.citation-diff-new .citation-diff-label { background: #16a34a; }
+.citation-diff-arrow {
+  text-align: center; font-size: 12px; color: var(--text-secondary);
+  padding: 2px 0; background: var(--bg);
+}
+.citation-diff-text { flex: 1; word-break: break-word; }
+.citation-diff-uncorrected { opacity: .75; }
+.citation-diff-uncorrected .citation-diff-header { background: #fef2f2; color: #dc2626; }
+
+[data-theme="dark"] .citation-diff-old { background: #3b1515; }
+[data-theme="dark"] .citation-diff-new { background: #0f2f24; }
+[data-theme="dark"] .citation-diff-uncorrected .citation-diff-header { background: #3b1515; }
 
 .edit-mode-indicator {
   position: sticky; top: 8px; z-index: 10;
@@ -2273,6 +2394,12 @@ footer { text-align: center; padding: 24px; color: var(--text-secondary); font-s
   .result-sidebar {
     width: 100% !important; max-width: 100% !important;
     height: 100%; border-radius: 0;
+  }
+  /* But keep minimized sidebar as floating bar */
+  .result-sidebar.minimized {
+    width: auto !important; max-width: calc(100vw - 24px) !important;
+    height: auto; border-radius: 12px;
+    top: 70px; right: 8px;
   }
   .result-sidebar-header {
     padding: 16px; border-radius: 0;

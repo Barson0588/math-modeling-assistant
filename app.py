@@ -17,13 +17,20 @@ from src.prompts import (
     SYSTEM_DEDUP,
 )
 from datetime import date
-from src.llm_client import generate_response, generate_stream
+from src.llm_client import generate_response, generate_stream, run_tool_loop
 from src.models_data import MODELS
 from src.problems_data import PROBLEMS
 from src.guide_data import GUIDE
 from src.scholar import search_by_keywords, search_papers, format_reference_apa, format_references_apa
 from src.auth import auth_bp, get_current_user, decrypt_api_key
 from src.db import init_db
+from src.dedup_ast import LayoutPreservingDeduper
+from src.citation_grounding import (
+    CitationGroundingAgent,
+    SEARCH_ACADEMIC_PAPER_TOOL,
+    CITATION_TOOL_EXECUTORS,
+    SYSTEM_CITATION_AGENT,
+)
 import config  # load .env and provide DEEPSEEK_API_KEY fallback
 
 app = Flask(__name__)
@@ -575,94 +582,97 @@ def verify_references():
 
     import re
 
-    # Extract reference section — look for "References" / "参考文献" header
-    ref_section = content
-    ref_header = re.search(
-        r'(?:^|\n)#{1,3}\s*(?:References?|参考文献|Bibliography|Works?\s*Cited)\s*\n',
-        content, re.IGNORECASE
-    )
-    if ref_header:
-        ref_section = content[ref_header.end():]
+    try:
+        ref_section = content
+        ref_header = re.search(
+            r'(?:^|\n)#{1,3}\s*(?:References?|参考文献|Bibliography|Works?\s*Cited)\s*\n',
+            content, re.IGNORECASE
+        )
+        if ref_header:
+            ref_section = content[ref_header.end():]
 
-    # Extract individual references
-    ref_patterns = [
-        r'\[(\d+)\]\s+(.+?)(?=\[\d+\]|\Z)',  # [1] Author. Title...
-        r'^\d+\.\s+(.+?)(?=\n\d+\.\s|\Z)',    # 1. Author. Title...
-    ]
-    refs_found = []  # list of (ref_number, ref_text)
-    for pattern in ref_patterns:
-        matches = re.findall(pattern, ref_section, re.DOTALL | re.MULTILINE)
-        for match in matches:
-            num, text = (match[0], match[1]) if isinstance(match, tuple) else (str(len(refs_found) + 1), match)
-            if len(text.strip()) > 30:
-                refs_found.append((num, text.strip()[:300]))
+        # Extract individual references
+        ref_patterns = [
+            r'\[(\d+)\]\s+(.+?)(?=\[\d+\]|\Z)',  # [1] Author. Title...
+            r'^\d+\.\s+(.+?)(?=\n\d+\.\s|\Z)',    # 1. Author. Title...
+        ]
+        refs_found = []  # list of (ref_number, ref_text)
+        for pattern in ref_patterns:
+            matches = re.findall(pattern, ref_section, re.DOTALL | re.MULTILINE)
+            for match in matches:
+                num, text = (match[0], match[1]) if isinstance(match, tuple) else (str(len(refs_found) + 1), match)
+                if len(text.strip()) > 30:
+                    refs_found.append((num, text.strip()[:300]))
 
-    if not refs_found:
-        return jsonify({"error": "未在论文中找到参考文献"}), 400
+        if not refs_found:
+            return jsonify({"error": "未在论文中找到参考文献"}), 400
 
-    # Search all references, but be responsive
-    results = []
-    fake_count = 0
-    for ref_num, ref_text in refs_found:
-        # Smart title extraction for better Semantic Scholar matching
-        search_query = _extract_title_for_search(ref_text)
+        # Search all references, but be responsive
+        results = []
+        fake_count = 0
+        for ref_num, ref_text in refs_found:
+            # Smart title extraction for better Semantic Scholar matching
+            search_query = _extract_title_for_search(ref_text)
 
-        papers = search_by_keywords([search_query], limit=5)
-        if papers:
-            best = papers[0]
-            # Consider verified if title similarity or citation count is substantial
-            verified = best.get("citationCount", 0) > 0 or len(best.get("title", "")) > 20
-            result = {
-                "ref_num": ref_num,
-                "original": ref_text[:200],
-                "status": "verified",
-                "match_title": best.get("title", ""),
-                "match_authors": best.get("authors", []),
-                "match_year": best.get("year"),
-                "match_citations": best.get("citationCount", 0),
-                "match_doi": best.get("doi", ""),
-                "match_url": best.get("url", ""),
-                "match_apa": format_reference_apa(best),
-                "alternatives": [
-                    format_reference_apa(p) for p in papers[1:3]
-                ] if papers[1:] else [],
-            }
-            results.append(result)
-        else:
-            fake_count += 1
-            # Try broader search for alternative real references
-            fallback_query = search_query[:80]
-            alt_papers = search_papers(fallback_query, limit=3) if len(fallback_query) > 20 else []
-            results.append({
-                "ref_num": ref_num,
-                "original": ref_text[:200],
-                "status": "not_found",
-                "match_title": "",
-                "match_authors": [],
-                "match_year": None,
-                "match_citations": 0,
-                "match_doi": "",
-                "match_url": "",
-                "match_apa": "",
-                "suggested_replacements": [
-                    {
-                        "apa": format_reference_apa(p),
-                        "title": p.get("title", ""),
-                        "citationCount": p.get("citationCount", 0),
-                        "year": p.get("year"),
-                    }
-                    for p in alt_papers
-                ] if alt_papers else [],
-            })
+            papers = search_by_keywords([search_query], limit=5)
+            if papers:
+                best = papers[0]
+                # Consider verified if title similarity or citation count is substantial
+                verified = best.get("citationCount", 0) > 0 or len(best.get("title", "")) > 20
+                result = {
+                    "ref_num": ref_num,
+                    "original": ref_text[:200],
+                    "status": "verified",
+                    "match_title": best.get("title", ""),
+                    "match_authors": best.get("authors", []),
+                    "match_year": best.get("year"),
+                    "match_citations": best.get("citationCount", 0),
+                    "match_doi": best.get("doi", ""),
+                    "match_url": best.get("url", ""),
+                    "match_apa": format_reference_apa(best),
+                    "alternatives": [
+                        format_reference_apa(p) for p in papers[1:3]
+                    ] if papers[1:] else [],
+                }
+                results.append(result)
+            else:
+                fake_count += 1
+                # Try broader search for alternative real references
+                fallback_query = search_query[:80]
+                alt_papers = search_papers(fallback_query, limit=3) if len(fallback_query) > 20 else []
+                results.append({
+                    "ref_num": ref_num,
+                    "original": ref_text[:200],
+                    "status": "not_found",
+                    "match_title": "",
+                    "match_authors": [],
+                    "match_year": None,
+                    "match_citations": 0,
+                    "match_doi": "",
+                    "match_url": "",
+                    "match_apa": "",
+                    "suggested_replacements": [
+                        {
+                            "apa": format_reference_apa(p),
+                            "title": p.get("title", ""),
+                            "citationCount": p.get("citationCount", 0),
+                            "year": p.get("year"),
+                        }
+                        for p in alt_papers
+                    ] if alt_papers else [],
+                })
 
-    verified = sum(1 for r in results if r["status"] == "verified")
-    return jsonify({
-        "total": len(results),
-        "verified": verified,
-        "fake": fake_count,
-        "results": results,
-        "ref_section_start": ref_header.start() if ref_header else -1,
-    })
+        verified = sum(1 for r in results if r["status"] == "verified")
+        return jsonify({
+            "total": len(results),
+            "verified": verified,
+            "fake": fake_count,
+            "results": results,
+            "ref_section_start": ref_header.start() if ref_header else -1,
+        })
+    except Exception as e:
+        logger.error("reference verification failed: %s", e, exc_info=True)
+        return jsonify({"error": "引用验证失败，请稍后重试"}), 500
 
 
 # ===== API: Math Self-Consistency Check =====
@@ -687,7 +697,7 @@ def verify_math():
     if not formula_blocks:
         # Fallback: use content sections that contain $$ or $
         parts = content.split('\n\n')
-        formula_blocks = [p for p in parts if '$$' in p or '\\begin' in p or '\\frac' in p]
+        formula_blocks = [p for p in parts if '$$' in p or '$' in p or '\\begin' in p or '\\frac' in p]
 
     if not formula_blocks:
         return jsonify({"error": "未在论文中找到数学公式"}), 400
@@ -805,6 +815,168 @@ Please provide the complete rewritten paper that says the same thing differently
     except Exception as e:
         logger.error("dedup failed: %s", e, exc_info=True)
         return jsonify({"error": "降重改写失败，请稍后重试"}), 500
+
+
+# ===== API: AST-based Layout-Preserving Deduplication =====
+
+@app.route("/api/deduplicate-ast", methods=["POST"])
+@limiter.limit("10 per minute")
+def deduplicate_ast():
+    """Layout-preserving deduplication using markdown AST parsing.
+
+    Only natural-language text paragraphs are sent to the LLM for rewriting.
+    Code fences, tables, images, LaTeX math, and horizontal rules are
+    completely isolated and pass through untouched.
+    """
+    data = request.get_json()
+    content = data.get("content", "").strip()
+    contest_type = data.get("contest_type", "MCM/ICM")
+
+    if not content:
+        return jsonify({"error": "请提供论文内容"}), 400
+    if len(content) < 200:
+        return jsonify({"error": "论文内容过短，至少需要 200 字"}), 400
+
+    try:
+        # Phase 1: AST parse & extract text segments
+        deduper = LayoutPreservingDeduper()
+        deduper.parse(content)
+        segments = deduper.extract_text_segments()
+
+        if not segments:
+            return jsonify({"content": content, "note": "No text segments found to rewrite."})
+
+        # Phase 2: Batch-send to LLM for rewriting
+        lang = "Chinese" if contest_type == "CUMCM" else "English"
+        rewritten_map: dict[int, str] = {}
+
+        batch_size = 5
+        for batch_start in range(0, len(segments), batch_size):
+            batch = segments[batch_start:batch_start + batch_size]
+
+            # Build a prompt that shows each segment with its context
+            prompt_parts = []
+            for seg in batch:
+                header = seg.get('context_header', '')
+                header_info = f" (section: {header})" if header else ""
+                prompt_parts.append(
+                    f"<segment id={seg['id']}{header_info}>\n{seg['text']}\n</segment>"
+                )
+
+            user_prompt = f"""Rewrite the following text segments from a mathematical modeling paper to reduce plagiarism risk.
+
+Language: {lang}
+
+CRITICAL RULES:
+1. Rewrite each segment thoroughly — restructure sentences, use different vocabulary, vary academic phrasing.
+2. Preserve ALL placeholders of the form ⟨⟨PROTECTED_N⟩⟩ exactly as they appear — these are atomic tokens representing formulas, images, or code. NEVER modify, remove, or reorder them.
+3. Keep the original meaning and technical accuracy.
+4. Output each rewritten segment in the same order, wrapped in <segment id=N>...</segment> tags.
+
+Segments to rewrite:
+
+{chr(10).join(prompt_parts)}"""
+
+            result = generate_response(
+                "You are an academic writing expert. Rewrite text to reduce plagiarism risk while preserving meaning. Always preserve ⟨⟨PROTECTED_N⟩⟩ markers verbatim.",
+                user_prompt,
+                max_tokens=4000,
+                api_key=_get_api_key(),
+            )
+
+            # Parse <segment id=N>...</segment> from LLM response
+            import re as _re
+            seg_pattern = _re.compile(
+                r'<segment\s+id\s*=\s*(\d+)\s*>(.*?)</segment\s*>',
+                _re.DOTALL,
+            )
+            for m in seg_pattern.finditer(result):
+                sid = int(m.group(1))
+                rw_text = m.group(2).strip()
+                rewritten_map[sid] = rw_text
+
+            # Fallback: if parsing failed, use original texts
+            for seg in batch:
+                if seg['id'] not in rewritten_map:
+                    rewritten_map[seg['id']] = seg['text']
+
+        # Phase 3: Reassemble document with rewritten text
+        final = deduper.apply_and_render(rewritten_map)
+        return jsonify({"content": final, "mode": "ast"})
+
+    except Exception as e:
+        logger.error("AST dedup failed: %s", e, exc_info=True)
+        return jsonify({"error": f"降重改写失败: {str(e)[:200]}"}), 500
+
+
+# ===== API: RAG Citation Grounding =====
+
+@app.route("/api/ground-citations", methods=["POST"])
+@limiter.limit("5 per minute")
+def ground_citations():
+    """Autonomous citation verification and correction.
+
+    Uses function-calling tool use to let the DeepSeek model search for
+    real academic papers, verify references, and replace hallucinated ones
+    with verified alternatives.
+    """
+    data = request.get_json()
+    content = data.get("content", "").strip()
+
+    if not content:
+        return jsonify({"error": "请提供论文内容"}), 400
+
+    try:
+        agent = CitationGroundingAgent()
+
+        # Phase 1: Extract references
+        refs = agent.extract_references(content)
+        if not refs:
+            return jsonify({
+                "content": content,
+                "summary": "未在论文中找到参考文献。",
+                "corrections": [],
+            })
+
+        # Phase 2: Build verification prompt and run tool loop
+        user_prompt = agent.build_verification_prompt()
+
+        def _run_tool_loop(system_prompt, user_prompt, tools, tool_executors):
+            return run_tool_loop(
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                tools=tools,
+                tool_executors=tool_executors,
+                max_turns=5,
+                api_key=_get_api_key(),
+            )
+
+        response_text = _run_tool_loop(
+            SYSTEM_CITATION_AGENT,
+            user_prompt,
+            [SEARCH_ACADEMIC_PAPER_TOOL],
+            CITATION_TOOL_EXECUTORS,
+        )
+
+        # Phase 3: Parse verification results
+        agent.verification_results = agent.parse_verification_response(response_text)
+
+        # Phase 4: Apply corrections
+        corrected_paper, corrections_log = agent.apply_corrections(content)
+
+        # Phase 5: Generate summary
+        summary = agent.generate_correction_summary(corrections_log)
+
+        return jsonify({
+            "content": corrected_paper,
+            "summary": summary,
+            "corrections": corrections_log,
+            "total_refs": len(refs),
+        })
+
+    except Exception as e:
+        logger.error("citation grounding failed: %s", e, exc_info=True)
+        return jsonify({"error": f"引用验证失败: {str(e)[:200]}"}), 500
 
 
 # ===== API: Abstract Refinement =====
