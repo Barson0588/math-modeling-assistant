@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>注册 — MMA</title>
+<link rel="stylesheet" href="/static/style.css">
+<script>try{var t=localStorage.getItem('mma-theme')||(window.matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light');document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
+<style>
+.auth-card { animation: fadeUp .4s ease-out; }
+@keyframes fadeUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+.auth-card input { width: 100%; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg); color: var(--text); font-size: 14px; }
+.auth-card input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+.auth-card label { display: block; margin-bottom: 4px; font-weight: 500; font-size: 13px; }
+.auth-card .field { margin-bottom: 16px; }
+</style>
+</head>
+<body>
+<main style="display:flex;align-items:center;justify-content:center;min-height:100vh;padding:16px">
+<div class="card auth-card" style="width:100%;max-width:400px;padding:32px">
+  <h1 style="text-align:center;margin-bottom:4px;font-size:28px">MMA</h1>
+  <p style="text-align:center;color:var(--text-secondary);margin-bottom:24px;font-size:14px">创建账号，同步你的 API Key 和生成记录</p>
+  <form id="register-form">
+    <div class="field">
+      <label for="reg-email">邮箱</label>
+      <input type="email" id="reg-email" placeholder="your@email.com" required autofocus>
+    </div>
+    <div class="field">
+      <label for="reg-password">密码</label>
+      <input type="password" id="reg-password" placeholder="至少 6 位" required minlength="6">
+    </div>
+    <div class="field">
+      <label for="reg-confirm">确认密码</label>
+      <input type="password" id="reg-confirm" placeholder="再输入一次" required minlength="6">
+    </div>
+    <div id="reg-error" class="error-msg" hidden></div>
+    <button type="submit" class="btn-primary" style="width:100%;padding:12px" id="reg-btn">
+      <span class="btn-text">注册</span>
+      <span class="btn-loading" hidden><span class="spinner"></span>注册中...</span>
+    </button>
+  </form>
+  <p style="text-align:center;margin-top:16px;font-size:14px;color:var(--text-secondary)">
+    已有账号？<a href="/login">登录</a>
+  </p>
+</div>
+</main>
+<script src="/static/js/auth-page.js"></script>
+</body>
+</html>

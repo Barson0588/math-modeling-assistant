@@ -8,3 +8,4 @@ dist/
 build/
 *.dmg
 .superpowers/
+data/

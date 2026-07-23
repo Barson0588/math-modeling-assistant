@@ -1,10 +1,15 @@
-const CACHE_NAME = 'mma-v2';
+const CACHE_NAME = 'mma-v3';
 const STATIC_ASSETS = [
   '/',
   '/static/style.css',
   '/static/script.js',
+  '/static/js/lib.js',
+  '/static/js/ai-teammate.js',
+  '/static/js/auth-page.js',
   '/static/manifest.json',
   '/static/offline.html',
+  '/login',
+  '/register',
 ];
 
 // Install: pre-cache static assets

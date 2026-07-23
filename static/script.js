@@ -58,6 +58,18 @@ async function verifyAndSaveKey() {
       setApiKey(key);
       hideSetupModal();
       showToast('API Key 验证成功');
+      // Sync to server if logged in, so account panel shows correct status
+      try {
+        var meRes = await fetch('/api/auth/me');
+        var meData = await meRes.json();
+        if (meData.logged_in) {
+          await fetch('/api/auth/save-key', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ api_key: key }),
+          });
+        }
+      } catch(e) {}
     } else {
       errorEl.textContent = '验证失败: ' + (data.message || data.status);
       errorEl.hidden = false;
@@ -102,6 +114,38 @@ window.fetch = function(url, options = {}) {
     }
   }
 })();
+
+// ============================================================
+// Markdown + LaTeX rendering helper
+// ============================================================
+function _stripCodeFences(text) {
+  if (!text) return text;
+  text = text.trim();
+  text = text.replace(/^```(?:text|markdown|plain|md)?\s*\n/, '');
+  text = text.replace(/\n```\s*$/, '');
+  return text.trim();
+}
+
+function renderMarkdown(content) {
+  return marked.parse(content);
+}
+
+function renderTo(el, content) {
+  el.innerHTML = marked.parse(content);
+  if (typeof renderMathInElement !== 'undefined') {
+    try {
+      renderMathInElement(el, {
+        delimiters: [
+          {left: '$$', right: '$$', display: true},
+          {left: '$', right: '$', display: false},
+          {left: '\\[', right: '\\]', display: true},
+          {left: '\\(', right: '\\)', display: false},
+        ],
+        throwOnError: false,
+      });
+    } catch(e) {}
+  }
+}
 
 // ============================================================
 // Dark Mode
@@ -325,9 +369,40 @@ async function loadModels(retry = false) {
 
     renderModelGrid(allModels);
     updateModelCount(allModels.length);
+    injectStarterModels();
   } catch (e) {
     grid.innerHTML = `<p class="error-msg">加载失败 <button class="btn-sm" onclick="loadModels(true)">重试</button></p>`;
   }
+}
+
+var STARTER_MODELS = [
+  { name: '层次分析法 (AHP)', summary: '多准则决策，适合综合评价类问题', difficulty: '入门' },
+  { name: '线性回归', summary: '最基础的数据拟合方法，预测题首选', difficulty: '入门' },
+  { name: '蒙特卡洛模拟', summary: '随机模拟，处理不确定性问题的利器', difficulty: '简单' },
+];
+
+function injectStarterModels() {
+  var grid = document.getElementById('model-grid');
+  if (!grid || grid.querySelector('.starter-section')) return;
+  var section = document.createElement('div');
+  section.className = 'starter-section';
+  section.innerHTML = '<p class="starter-title">&#127891; 新手入门推荐</p><div class="starter-cards">' +
+    STARTER_MODELS.map(function(m) {
+      return '<div class="model-card starter-card" data-model="' + m.name + '" style="cursor:pointer">' +
+        '<h4>' + m.name + '</h4><p>' + m.summary + '</p>' +
+        '<span class="model-diff-tag">' + m.difficulty + '</span></div>';
+    }).join('') + '</div>';
+  grid.insertBefore(section, grid.firstChild);
+  // Click handler to filter to the starter model
+  section.querySelectorAll('.starter-card').forEach(function(card) {
+    card.addEventListener('click', function() {
+      var searchInput = document.getElementById('model-search');
+      if (searchInput) {
+        searchInput.value = this.dataset.model;
+        filterModels();
+      }
+    });
+  });
 }
 
 function getModelsFilters() {
@@ -708,6 +783,44 @@ const resultLabel = document.getElementById('result-label');
 const historyCard = document.getElementById('history-card');
 const historyList = document.getElementById('history-list');
 
+// ---- Workflow Step Bar ----
+(function initStepBar() {
+  var bar = document.createElement('div');
+  bar.className = 'step-bar';
+  bar.id = 'workflow-step-bar';
+  bar.innerHTML = '<div class="step-item active" data-step="1"><span class="step-dot">1</span><span class="step-label">选题</span></div>' +
+    '<div class="step-arrow">&rarr;</div>' +
+    '<div class="step-item" data-step="2"><span class="step-dot">2</span><span class="step-label">生成框架</span></div>' +
+    '<div class="step-arrow">&rarr;</div>' +
+    '<div class="step-item" data-step="3"><span class="step-dot">3</span><span class="step-label">完整论文</span></div>' +
+    '<div class="step-arrow">&rarr;</div>' +
+    '<div class="step-item" data-step="4"><span class="step-dot">4</span><span class="step-label">检查优化</span></div>' +
+    '<div class="step-arrow">&rarr;</div>' +
+    '<div class="step-item" data-step="5"><span class="step-dot">5</span><span class="step-label">导出</span></div>';
+  var hero = document.querySelector('#tab-generator .hero');
+  if (hero) hero.after(bar);
+
+  window.advanceStep = function(step) {
+    document.querySelectorAll('#workflow-step-bar .step-item').forEach(function(item) {
+      var s = parseInt(item.dataset.step);
+      item.classList.remove('active', 'done');
+      if (s < step) item.classList.add('done');
+      if (s === step) item.classList.add('active');
+    });
+  };
+
+  bar.querySelectorAll('.step-item').forEach(function(item) {
+    item.addEventListener('click', function() {
+      var step = parseInt(item.dataset.step);
+      var currentStep = document.querySelector('#workflow-step-bar .step-item.active');
+      var currentS = currentStep ? parseInt(currentStep.dataset.step) : 1;
+      if (step > currentS && window.Teammate) {
+        window.Teammate.addMessage('teammate', '请先完成上一步再继续。', []);
+      }
+    });
+  });
+})();
+
 function setButtonsLoading(btn, loading) {
   btn.querySelector('.btn-text').hidden = loading;
   btn.querySelector('.btn-loading').hidden = !loading;
@@ -717,6 +830,29 @@ function setButtonsLoading(btn, loading) {
 function mapProblemCategory(type) {
   const map = { A: '连续型', B: '离散型', C: '数据洞察', D: '网络科学', E: '可持续性', F: '政策研究' };
   return map[type] || '连续型';
+}
+
+// Try Example button
+var EXAMPLE_PROBLEM = '某沿海城市计划在未来 5 年内将可再生能源占比从 15% 提高到 40%。' +
+  '可供选择的能源类型包括：海上风电、光伏发电、生物质能。每种能源的建设成本、发电效率、占地面积和环境影响各不相同。' +
+  '请建立数学模型，确定最优的能源组合方案，使得在满足减排目标和 budget 约束下，总成本最小化。';
+
+var tryExampleBtn = document.getElementById('try-example-btn');
+if (tryExampleBtn) {
+  tryExampleBtn.addEventListener('click', function() {
+    document.getElementById('problem').value = EXAMPLE_PROBLEM;
+    document.getElementById('problem-type').value = 'E';
+    document.getElementById('contest-type').value = 'MCM/ICM';
+    showToast('已填入示例题目（可持续性 / E 题），点击生成即可体验');
+    if (window.Teammate) {
+      window.Teammate.fetchHint({
+        tab: 'generator', last_action: 'problem_filled',
+        problem_type: 'E', problem_text: EXAMPLE_PROBLEM,
+      });
+    }
+    document.getElementById('problem').scrollIntoView({ behavior: 'smooth' });
+    if (window.advanceStep) window.advanceStep(1);
+  });
 }
 
 generateBtn.addEventListener('click', async () => {
@@ -731,8 +867,12 @@ generateBtn.addEventListener('click', async () => {
 
   setButtonsLoading(generateBtn, true);
   aiReportBtn.disabled = true;
+  if (window.advanceStep) window.advanceStep(2);
   resultDiv.classList.add('visible');
-  resultContent.innerHTML = '<div class="stage-indicator"><span class="stage-dot"></span>准备中...<button class="btn-sm cancel-gen-btn" id="gen-cancel-btn">取消</button></div>';
+  resultContent.innerHTML = '<div class="progress-card" id="gen-progress-card">' +
+    '<div class="progress-header"><span class="progress-title">生成进度</span></div>' +
+    '<div class="progress-stages" id="gen-stages"></div></div>' +
+    '<div class="stage-indicator"><span class="stage-dot"></span>准备中...<button class="btn-sm cancel-gen-btn" id="gen-cancel-btn">取消</button></div>';
   resultLabel.textContent = '生成结果';
   resultDiv.scrollIntoView({ behavior: 'smooth' });
   const stageEl = resultContent.querySelector('.stage-indicator');
@@ -762,6 +902,8 @@ generateBtn.addEventListener('click', async () => {
     const decoder = new TextDecoder();
     let buffer = '';
     let chunkCount = 0;
+    let lastRenderedLen = 0;
+    let lastStageText = '';
     let msgLines = [];  // accumulate data: lines for current SSE message
 
     while (true) {
@@ -780,12 +922,44 @@ generateBtn.addEventListener('click', async () => {
             msgLines = [];
             if (data === '[DONE]') continue;
             if (data.startsWith('[ERROR]')) { errorOccurred = true; throw new Error(data.slice(8)); }
+            if (data.startsWith('[STAGE:')) {
+              var stageName = data.slice(7, -1);
+              updateProgressStage('gen-stages', stageName);
+              continue;
+            }
             fullContent += data;
             chunkCount++;
-            if (stageEl) stageEl.innerHTML = '<span class="stage-dot"></span>' + detectStage(fullContent);
-            if (chunkCount % 10 === 0 || fullContent.length < 200) {
-              resultContent.innerHTML = marked.parse(fullContent) + '<span class="streaming-cursor"></span>';
-              injectCodeCopyButtons(resultContent);
+            // Throttled stage detection (A3)
+            if (chunkCount % 20 === 0 && stageEl) {
+              var newStage = detectStage(fullContent);
+              if (newStage !== lastStageText) {
+                lastStageText = newStage;
+                stageEl.innerHTML = '<span class="stage-dot"></span>' + newStage;
+              }
+            }
+            // Truly incremental — only append new content, never rebuild old DOM
+            if (fullContent.length - lastRenderedLen >= 80 || fullContent.length < 200) {
+              var newText = fullContent.slice(lastRenderedLen);
+              // Find safe break point (paragraph boundary) to avoid splitting markdown constructs
+              var safeBreak = newText.lastIndexOf('\n\n');
+              var renderText, keepText;
+              if (safeBreak > 0 && newText.length > 200) {
+                renderText = newText.slice(0, safeBreak);
+                keepText = newText.slice(safeBreak);
+              } else if (newText.length > 300) {
+                var lastLine = newText.lastIndexOf('\n');
+                if (lastLine > 0) { renderText = newText.slice(0, lastLine); keepText = newText.slice(lastLine); }
+                else { renderText = newText; keepText = ''; }
+              } else {
+                renderText = newText; keepText = '';
+              }
+              if (renderText) {
+                var cursor = resultContent.querySelector('.streaming-cursor-el');
+                if (cursor) cursor.remove();
+                resultContent.insertAdjacentHTML('beforeend', marked.parse(renderText));
+                resultContent.insertAdjacentHTML('beforeend', '<span class="streaming-cursor-el"></span>');
+                lastRenderedLen = fullContent.length - keepText.length;
+              }
             }
           }
         } else if (line.startsWith('data: ')) {
@@ -795,29 +969,42 @@ generateBtn.addEventListener('click', async () => {
       }
     }
 
-    // Final render
-    resultContent.innerHTML = marked.parse(fullContent);
-    injectCodeCopyButtons(resultContent);
-    buildTOC(resultContent);
-    injectDisclaimer(resultContent);
-    injectVerificationChecklist(resultContent);
-    injectExplainButtons(resultContent);
-    injectQuickActions();
-    injectScholarButton();
-    injectModelRecommendBtn();
+    // Remove streaming cursor
+    var cursor = resultContent.querySelector('.streaming-cursor-el');
+    if (cursor) cursor.remove();
+    // Mark all stages done
+    finishAllStages('gen-stages');
+    // Final render — batch all post-completion injections in rAF (A4)
+    renderTo(resultContent, fullContent);
+    requestAnimationFrame(function() {
+      injectCodeCopyButtons(resultContent);
+      buildTOC(resultContent);
+      injectDisclaimer(resultContent);
+      injectVerificationChecklist(resultContent);
+      injectExplainButtons(resultContent);
+      injectQuickActions();
+      injectScholarButton();
+      injectModelRecommendBtn();
+      // Re-render math after injections add new content
+      if (typeof renderMathInElement !== 'undefined') {
+        try { renderMathInElement(resultContent, {delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false},{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}],throwOnError:false}); } catch(e) {}
+      }
+    });
     // Completion animation
     resultContent.classList.add('completed');
-    setTimeout(() => resultContent.classList.remove('completed'), 2500);
+    setTimeout(function() { resultContent.classList.remove('completed'); }, 2500);
+    if (window._teammateOnGenerationComplete) window._teammateOnGenerationComplete('generator');
     if (!errorOccurred && fullContent) {
       saveHistory(problem, contestType, problemType, fullContent);
       saveDraft(problem, contestType, problemType, fullContent);
+      if (window.advanceStep) window.advanceStep(3);
     }
   } catch (e) {
     _activeController = null;
     if (e.name === 'AbortError') {
       // Cancelled by user - keep partial content
       if (fullContent) {
-        resultContent.innerHTML = marked.parse(fullContent);
+        renderTo(resultContent, fullContent);
         injectCodeCopyButtons(resultContent);
         buildTOC(resultContent);
         injectDisclaimer(resultContent);
@@ -832,7 +1019,7 @@ generateBtn.addEventListener('click', async () => {
       }
     } else if (!errorOccurred) {
       // SSE error - show retry with partial content preserved
-      resultContent.innerHTML = (fullContent ? marked.parse(fullContent) + '<hr>' : '') +
+      resultContent.innerHTML = (fullContent ? renderMarkdown(fullContent) + '<hr>' : '') +
         `<p class="error-msg">生成中断: ${escapeHtml(e.message || '连接断开')} <button class="btn-sm" onclick="generateBtn.click()">重新生成</button></p>`;
       if (fullContent) {
         injectCodeCopyButtons(resultContent);
@@ -890,6 +1077,7 @@ aiReportBtn.addEventListener('click', async () => {
 // Copy & Download
 // ============================================================
 document.getElementById('copy-btn').addEventListener('click', () => {
+  if (window.advanceStep) window.advanceStep(5);
   const text = resultContent.innerText;
   navigator.clipboard.writeText(text).then(() => {
     const btn = document.getElementById('copy-btn');
@@ -1015,7 +1203,10 @@ paperGenerateBtn.addEventListener('click', async () => {
 
   setButtonsLoading(paperGenerateBtn, true);
   paperResult.classList.add('visible');
-  paperContent.innerHTML = '<div class="stage-indicator"><span class="stage-dot"></span>准备中...<button class="btn-sm cancel-gen-btn" id="paper-cancel-btn">取消</button></div>';
+  paperContent.innerHTML = '<div class="progress-card" id="paper-progress-card">' +
+    '<div class="progress-header"><span class="progress-title">生成进度</span></div>' +
+    '<div class="progress-stages" id="paper-stages"></div></div>' +
+    '<div class="stage-indicator"><span class="stage-dot"></span>准备中...<button class="btn-sm cancel-gen-btn" id="paper-cancel-btn">取消</button></div>';
   paperResultLabel.textContent = '论文预览';
   paperResult.scrollIntoView({ behavior: 'smooth' });
   document.getElementById('paper-cancel-btn').addEventListener('click', () => {
@@ -1045,6 +1236,8 @@ paperGenerateBtn.addEventListener('click', async () => {
     const decoder = new TextDecoder();
     let buffer = '';
     let chunkCount = 0;
+    let lastRenderedLen = 0;
+    let lastStageText = '';
     let msgLines = [];
 
     while (true) {
@@ -1062,12 +1255,43 @@ paperGenerateBtn.addEventListener('click', async () => {
             msgLines = [];
             if (data === '[DONE]') continue;
             if (data.startsWith('[ERROR]')) { errorOccurred = true; throw new Error(data.slice(8)); }
+            if (data.startsWith('[STAGE:')) {
+              var stageName = data.slice(7, -1);
+              updateProgressStage('paper-stages', stageName);
+              continue;
+            }
             fullContent += data;
             chunkCount++;
-            if (stageEl) stageEl.innerHTML = '<span class="stage-dot"></span>' + detectStage(fullContent);
-            if (chunkCount % 10 === 0 || fullContent.length < 300) {
-              paperContent.innerHTML = marked.parse(fullContent) + '<span class="streaming-cursor"></span>';
-              injectCodeCopyButtons(paperContent);
+            // Throttled stage detection (A3)
+            if (chunkCount % 20 === 0 && stageEl) {
+              var newStage = detectStage(fullContent);
+              if (newStage !== lastStageText) {
+                lastStageText = newStage;
+                stageEl.innerHTML = '<span class="stage-dot"></span>' + newStage;
+              }
+            }
+            // Truly incremental — only append new content, never rebuild old DOM
+            if (fullContent.length - lastRenderedLen >= 80 || fullContent.length < 300) {
+              var newText = fullContent.slice(lastRenderedLen);
+              var safeBreak = newText.lastIndexOf('\n\n');
+              var renderText, keepText;
+              if (safeBreak > 0 && newText.length > 200) {
+                renderText = newText.slice(0, safeBreak);
+                keepText = newText.slice(safeBreak);
+              } else if (newText.length > 300) {
+                var lastLine = newText.lastIndexOf('\n');
+                if (lastLine > 0) { renderText = newText.slice(0, lastLine); keepText = newText.slice(lastLine); }
+                else { renderText = newText; keepText = ''; }
+              } else {
+                renderText = newText; keepText = '';
+              }
+              if (renderText) {
+                var cursor = paperContent.querySelector('.streaming-cursor-el');
+                if (cursor) cursor.remove();
+                paperContent.insertAdjacentHTML('beforeend', marked.parse(renderText));
+                paperContent.insertAdjacentHTML('beforeend', '<span class="streaming-cursor-el"></span>');
+                lastRenderedLen = fullContent.length - keepText.length;
+              }
             }
           }
         } else if (line.startsWith('data: ')) {
@@ -1076,25 +1300,38 @@ paperGenerateBtn.addEventListener('click', async () => {
       }
     }
 
-    paperContent.innerHTML = marked.parse(fullContent);
-    injectCodeCopyButtons(paperContent);
-    injectDisclaimer(paperContent);
-    injectVerificationChecklist(paperContent);
-    injectExplainButtons(paperContent);
-    injectPaperStats();
-    injectQuickActions();
+    // Remove streaming cursor
+    var cursor = paperContent.querySelector('.streaming-cursor-el');
+    if (cursor) cursor.remove();
+    finishAllStages('paper-stages');
+    // Final render — batch post-completion injections in rAF (A4)
+    renderTo(paperContent, fullContent);
+    requestAnimationFrame(function() {
+      injectCodeCopyButtons(paperContent);
+      injectDisclaimer(paperContent);
+      injectVerificationChecklist(paperContent);
+      injectExplainButtons(paperContent);
+      injectPaperStats();
+      injectQuickActions();
+      if (typeof renderMathInElement !== 'undefined') {
+        try { renderMathInElement(paperContent, {delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false},{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}],throwOnError:false}); } catch(e) {}
+      }
+    });
     // Completion animation
     paperContent.classList.add('completed');
-    setTimeout(() => paperContent.classList.remove('completed'), 2500);
+    setTimeout(function() { paperContent.classList.remove('completed'); }, 2500);
+    if (window._teammateOnGenerationComplete) window._teammateOnGenerationComplete('paper');
     if (!errorOccurred && fullContent) {
       savePaperHistory(problem, contestType, problemType, fullContent);
+      saveDraft(problem, contestType, problemType, fullContent);
+      if (window.advanceStep) window.advanceStep(4);
       showToast('论文生成完成');
     }
   } catch (e) {
     _activeController = null;
     if (e.name === 'AbortError') {
       if (fullContent) {
-        paperContent.innerHTML = marked.parse(fullContent);
+        renderTo(paperContent, fullContent);
         injectCodeCopyButtons(paperContent);
         injectDisclaimer(paperContent);
         injectVerificationChecklist(paperContent);
@@ -1102,17 +1339,19 @@ paperGenerateBtn.addEventListener('click', async () => {
         injectPaperStats();
         injectQuickActions();
         savePaperHistory(problem, contestType, problemType, fullContent);
+        saveDraft(problem, contestType, problemType, fullContent);
         paperResultLabel.textContent = '已取消（内容已保留）';
       } else {
         paperContent.innerHTML = '<p class="error-msg">已取消生成</p>';
       }
     } else if (!errorOccurred) {
-      paperContent.innerHTML = (fullContent ? marked.parse(fullContent) + '<hr>' : '') +
+      paperContent.innerHTML = (fullContent ? renderMarkdown(fullContent) + '<hr>' : '') +
         `<p class="error-msg">生成中断: ${escapeHtml(e.message || '连接断开')} <button class="btn-sm" onclick="paperGenerateBtn.click()">重新生成</button></p>`;
       if (fullContent) {
         injectCodeCopyButtons(paperContent);
         injectQuickActions();
         savePaperHistory(problem, contestType, problemType, fullContent);
+        saveDraft(problem, contestType, problemType, fullContent);
         paperResultLabel.textContent = '部分结果';
       }
     }
@@ -1139,6 +1378,7 @@ document.getElementById('paper-copy-btn').addEventListener('click', () => {
 
 // Paper PDF download (print to PDF)
 document.getElementById('paper-pdf-btn').addEventListener('click', () => {
+  if (window.advanceStep) window.advanceStep(5);
   window.print();
 });
 
@@ -1353,13 +1593,16 @@ function restoreHistory(index) {
   if (!item) return;
   resultDiv.classList.add('visible');
   resultLabel.textContent = '历史记录';
-  resultContent.innerHTML = marked.parse(item.content);
+  resultContent.innerHTML = renderMarkdown(item.content);
   injectCodeCopyButtons(resultContent);
   buildTOC(resultContent);
   injectDisclaimer(resultContent);
   injectVerificationChecklist(resultContent);
   injectExplainButtons(resultContent);
   injectQuickActions();
+  if (typeof renderMathInElement !== 'undefined') {
+    try { renderMathInElement(resultContent, {delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false},{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}],throwOnError:false}); } catch(e) {}
+  }
   resultDiv.scrollIntoView({ behavior: 'smooth' });
   showToast('已恢复历史生成结果');
 }
@@ -1468,12 +1711,15 @@ function restorePaperHistory(index) {
   if (!item) return;
   paperResult.classList.add('visible');
   paperResultLabel.textContent = '历史论文';
-  paperContent.innerHTML = marked.parse(item.content);
+  paperContent.innerHTML = renderMarkdown(item.content);
   injectCodeCopyButtons(paperContent);
   injectDisclaimer(paperContent);
   injectVerificationChecklist(paperContent);
   injectExplainButtons(paperContent);
   injectQuickActions();
+  if (typeof renderMathInElement !== 'undefined') {
+    try { renderMathInElement(paperContent, {delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false},{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}],throwOnError:false}); } catch(e) {}
+  }
   paperResult.scrollIntoView({ behavior: 'smooth' });
   showToast('已恢复论文生成记录');
 }
@@ -1664,11 +1910,13 @@ restoreInputs();
 })();
 
 // ============================================================
-// Utilities
+// Utilities (shared in lib.js — define only if not already loaded)
 // ============================================================
+if (typeof escapeHtml === 'undefined') {
 function escapeHtml(str) {
   if (!str) return '';
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
 }
 
 // ============================================================
@@ -2017,6 +2265,61 @@ document.getElementById('print-btn').addEventListener('click', () => {
 });
 
 // Keyboard shortcuts handled in unified handler above (line ~330)
+
+// ============================================================
+// Progress Stage Helpers — update progress card during SSE streaming
+// ============================================================
+var STAGE_ICONS = {
+  '分析题目类型': '&#128269;', '匹配合适模型': '&#128218;', '构建论文框架': '&#128208;',
+  '撰写假设与符号说明': '&#9999;', '生成 Python 代码': '&#128187;', '生成敏感性分析': '&#128202;',
+  '撰写摘要': '&#128221;', '引言与问题重述': '&#128220;', '模型建立': '&#128295;',
+  '模型求解': '&#128291;', '结果分析': '&#128200;', '结论与参考文献': '&#128214;',
+};
+
+function updateProgressStage(containerId, stageName) {
+  var container = document.getElementById(containerId);
+  if (!container) return;
+  // Mark previous in-progress as done
+  var prev = container.querySelector('.progress-stage.in-progress');
+  if (prev) {
+    prev.classList.remove('in-progress');
+    prev.classList.add('done');
+    var checkEl = prev.querySelector('.stage-check');
+    if (!checkEl) {
+      checkEl = document.createElement('span');
+      checkEl.className = 'stage-check';
+      checkEl.innerHTML = '&#10003;';
+      prev.appendChild(checkEl);
+    }
+    var spinEl = prev.querySelector('.stage-spinner');
+    if (spinEl) spinEl.remove();
+  }
+  // Add new stage
+  var icon = STAGE_ICONS[stageName] || '&#10227;';
+  var row = document.createElement('div');
+  row.className = 'progress-stage in-progress';
+  row.dataset.stage = stageName;
+  row.innerHTML = '<span class="stage-icon">' + icon + '</span> ' + stageName + ' <span class="stage-spinner"></span>';
+  container.appendChild(row);
+}
+
+function finishAllStages(containerId) {
+  var container = document.getElementById(containerId);
+  if (!container) return;
+  var all = container.querySelectorAll('.progress-stage');
+  all.forEach(function(row) {
+    row.classList.remove('in-progress');
+    row.classList.add('done');
+    var spinEl = row.querySelector('.stage-spinner');
+    if (spinEl) spinEl.remove();
+    if (!row.querySelector('.stage-check')) {
+      var checkEl = document.createElement('span');
+      checkEl.className = 'stage-check';
+      checkEl.innerHTML = '&#10003;';
+      row.appendChild(checkEl);
+    }
+  });
+}
 
 // ============================================================
 // Stage Detection — parse streaming content for current section
@@ -2421,7 +2724,7 @@ async function exportProjectBundle() {
     '\n\n生成时间: ' + new Date().toLocaleString('zh-CN')
   );
 
-  btn.innerHTML = '⏳ 打包中...'; btn.disabled = true;
+  setActionLoading('qa-export-btn', true);
   try {
     const blob = await zip.generateAsync({ type: 'blob' });
     const url = URL.createObjectURL(blob);
@@ -2434,7 +2737,7 @@ async function exportProjectBundle() {
   } catch (e) {
     showToast('导出失败');
   } finally {
-    btn.innerHTML = '📦 导出项目'; btn.disabled = false;
+    setActionLoading('qa-export-btn', false);
   }
 }
 
@@ -2447,23 +2750,24 @@ function injectQuickActions() {
 
   const bar = document.createElement('div');
   bar.className = 'quick-actions-bar';
-  bar.innerHTML = `
-    <span class="quick-actions-label">快捷操作</span>
-    <button class="quick-action-btn edit-action" id="qa-edit-btn" title="切换编辑 / 预览模式，可直接修改论文内容">✏️ 编辑论文</button>
-    <button class="quick-action-btn abstract-action" id="qa-abstract-btn" title="按 COMAP 标准逐条审查优化摘要">📝 摘要精修</button>
-    <button class="quick-action-btn plagiarism-action" id="qa-plagiarism-btn" title="AI 分析论文原创性，检测模板化内容和潜在雷同">🔍 AI 查重</button>
-    <button class="quick-action-btn sensitivity-action" id="qa-sensitivity-btn" title="生成敏感性分析 Python 代码">📊 敏感性分析</button>
-    <button class="quick-action-btn verify-refs-action" id="qa-verify-refs-btn" title="交叉验证参考文献是否真实存在">📚 验证引用</button>
-    <button class="quick-action-btn verify-math-action" id="qa-verify-math-btn" title="独立复核数学推导的正确性">📐 验证推导</button>
-    <button class="quick-action-btn score-action" id="qa-score-btn" title="按 COMAP 评审标准打分">🎯 论文评分</button>
-    <button class="quick-action-btn figures-action" id="qa-figures-btn" title="智能推荐论文需要的图表并生成代码">📈 图表建议</button>
-    <button class="quick-action-btn compare-action" id="qa-compare-btn" title="与上一版论文并排对比分析">🔄 对比论文</button>
-    <button class="quick-action-btn review-action" id="qa-review-btn" title="AI 扮演 COMAP 评委，按官方评分标准逐项打分">🏅 模拟评审</button>
-    <button class="quick-action-btn export-action" id="qa-export-btn" title="打包导出论文.md + 代码.py + 参考文献.bib">📦 导出项目</button>
-  `;
+  bar.innerHTML = '<span class="quick-actions-label">质量检查</span>' +
+    '<button class="quick-action-btn plagiarism-action" id="qa-plagiarism-btn" title="AI 分析论文原创性，检测模板化内容和潜在雷同">&#128269; AI 查重</button>' +
+    '<button class="quick-action-btn verify-refs-action" id="qa-verify-refs-btn" title="交叉验证参考文献是否真实存在">&#128214; 验证引用</button>' +
+    '<button class="quick-action-btn verify-math-action" id="qa-verify-math-btn" title="独立复核数学推导的正确性">&#128208; 验证推导</button>' +
+    '<button class="quick-action-btn score-action" id="qa-score-btn" title="按 COMAP 评审标准打分">&#127919; 论文评分</button>' +
+    '<button class="quick-action-btn review-action" id="qa-review-btn" title="AI 扮演 COMAP 评委，按官方评分标准逐项打分">&#127941; 模拟评审</button>' +
+    '<span class="quick-actions-sep"></span>' +
+    '<span class="quick-actions-label">内容增强</span>' +
+    '<button class="quick-action-btn abstract-action" id="qa-abstract-btn" title="按 COMAP 标准逐条审查优化摘要">&#128221; 摘要精修</button>' +
+    '<button class="quick-action-btn sensitivity-action" id="qa-sensitivity-btn" title="生成敏感性分析 Python 代码">&#128202; 敏感性分析</button>' +
+    '<button class="quick-action-btn figures-action" id="qa-figures-btn" title="智能推荐论文需要的图表并生成代码">&#128200; 图表建议</button>' +
+    '<span class="quick-actions-sep"></span>' +
+    '<span class="quick-actions-label">编辑管理</span>' +
+    '<button class="quick-action-btn edit-action" id="qa-edit-btn" title="切换编辑 / 预览模式，可直接修改论文内容">&#9999; 编辑论文</button>' +
+    '<button class="quick-action-btn compare-action" id="qa-compare-btn" title="与上一版论文并排对比分析">&#128260; 对比论文</button>' +
+    '<button class="quick-action-btn export-action" id="qa-export-btn" title="打包导出论文.md + 代码.py + 参考文献.bib">&#128230; 导出项目</button>';
 
-  // Insert after the result toolbar
-  const toolbar = resultCard.querySelector('.result-toolbar');
+  var toolbar = resultCard.querySelector('.result-toolbar');
   if (toolbar) {
     toolbar.insertAdjacentElement('afterend', bar);
   } else {
@@ -2487,6 +2791,34 @@ function injectQuickActions() {
 // ============================================================
 // Result Sidebar — slide-in panel for all quick action outputs
 // ============================================================
+var _sidebarAbortController = null;
+var _actionLoadingTexts = {};
+
+function setActionLoading(btnId, loading) {
+  var btn = document.getElementById(btnId);
+  if (!btn) return;
+  if (loading) {
+    _actionLoadingTexts[btnId] = btn.innerHTML;
+    btn.disabled = true;
+    btn.classList.add('loading');
+  } else {
+    var orig = _actionLoadingTexts[btnId];
+    if (orig) btn.innerHTML = orig;
+    btn.disabled = false;
+    btn.classList.remove('loading');
+    delete _actionLoadingTexts[btnId];
+  }
+}
+
+function cancelSidebarAction() {
+  if (_sidebarAbortController) {
+    _sidebarAbortController.abort();
+    _sidebarAbortController = null;
+  }
+  if (_sidebarProgressTimer) { clearInterval(_sidebarProgressTimer); _sidebarProgressTimer = null; }
+  updateSidebarContent('<p class="empty-state">操作已取消</p>');
+  Object.keys(_actionLoadingTexts).forEach(function(id) { setActionLoading(id, false); });
+}
 function ensureSidebar() {
   if (document.getElementById('result-sidebar')) return;
   const backdrop = document.createElement('div');
@@ -2521,15 +2853,43 @@ function closeSidebar() {
   document.getElementById('result-sidebar-backdrop')?.classList.remove('open');
 }
 
-function showSidebar(title) {
+var _sidebarProgressTimer = null;
+var _sidebarProgressStages = [];
+var _sidebarProgressIdx = 0;
+
+function showSidebar(title, stages) {
   ensureSidebar();
+  if (_sidebarAbortController) _sidebarAbortController.abort();
+  _sidebarAbortController = new AbortController();
   document.getElementById('sidebar-title').textContent = title;
-  document.getElementById('sidebar-body').innerHTML = '<div class="result-sidebar-loading"><div class="spinner"></div><span>分析中...</span></div>';
+  _sidebarProgressStages = stages || ['分析中...'];
+  _sidebarProgressIdx = 0;
+  document.getElementById('sidebar-body').innerHTML = '<div class="result-sidebar-loading"><div class="spinner"></div><span id="sidebar-progress-text">' + _sidebarProgressStages[0] + '</span><button class="btn-sm cancel-sidebar-btn" onclick="cancelSidebarAction()">取消</button></div>';
   document.getElementById('result-sidebar').classList.add('open');
   document.getElementById('result-sidebar-backdrop').classList.add('open');
+  // Progressive stage updates
+  if (_sidebarProgressTimer) clearInterval(_sidebarProgressTimer);
+  if (_sidebarProgressStages.length > 1) {
+    _sidebarProgressTimer = setInterval(function() {
+      _sidebarProgressIdx++;
+      if (_sidebarProgressIdx < _sidebarProgressStages.length) {
+        var el = document.getElementById('sidebar-progress-text');
+        if (el) el.textContent = _sidebarProgressStages[_sidebarProgressIdx];
+      } else {
+        clearInterval(_sidebarProgressTimer);
+        _sidebarProgressTimer = null;
+      }
+    }, 2000);
+  }
+}
+
+function updateSidebarProgress(stage) {
+  var el = document.getElementById('sidebar-progress-text');
+  if (el) el.textContent = stage;
 }
 
 function updateSidebarContent(htmlContent) {
+  if (_sidebarProgressTimer) { clearInterval(_sidebarProgressTimer); _sidebarProgressTimer = null; }
   const body = document.getElementById('sidebar-body');
   if (body) body.innerHTML = htmlContent;
 }
@@ -2595,37 +2955,51 @@ function getActiveContent() {
   return document.getElementById('result-content');
 }
 
-async function runPlagiarismCheck() {
+// Loop check state
+var _plagLoopCount = 0;
+var _plagLoopMax = 3;
+
+async function runPlagiarismCheck(textOverride, loopIteration) {
   const btn = document.getElementById('qa-plagiarism-btn');
   const resultContent = getActiveContent();
-  const text = resultContent ? resultContent.innerText : '';
+  const text = textOverride || (resultContent ? resultContent.innerText : '');
   if (!text.trim()) { showToast('没有可查重的内容'); return; }
 
-  showSidebar('原创性分析');
-  btn.innerHTML = '⏳ 查重中...'; btn.disabled = true;
+  if (!loopIteration) { _plagLoopCount = 0; }
+  var title = loopIteration ? '原创性分析 (第' + loopIteration + '轮)' : '原创性分析';
+  showSidebar(title, ['正在提取文本片段...', '正在比对分析...', '正在生成查重报告...']);
+  setActionLoading('qa-plagiarism-btn', true);
+  updateSidebarProgress(loopIteration ? '第' + loopIteration + '轮查重 — AI 深度分析中...' : '正在提取文本片段...');
   try {
+    var body = JSON.stringify({ content: text, iteration: loopIteration || 1 });
     const res = await fetch('/api/check-plagiarism', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content: text }),
+      body: body,
+      signal: _sidebarAbortController?.signal,
     });
     const data = await res.json();
     if (data.error) {
       updateSidebarContent(`<p class="error-msg">${escapeHtml(data.error)}</p>`);
     } else {
-      const dedupHtml = `
+      var dedupHtml = `
         <div class="dedup-action-bar">
           <button class="btn-sm dedup-btn" id="dedup-full-btn" onclick="runDedup('full')">全文降重改写</button>
           <button class="btn-sm dedup-btn" id="dedup-flagged-btn" onclick="runDedup('flagged')">仅改写高风险段落</button>
           <span class="dedup-hint">AI 去重 — 保留公式、数据，仅重述语言</span>
         </div>
         <div class="dedup-result" id="dedup-result" hidden></div>`;
-      updateSidebarContent(`<div class="plagiarism-report-wrapper">${dedupHtml}<div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">AI 辅助查重，结果仅供参考</div>${marked.parse(data.content)}</div>`);
-      // Store content for dedup use
+      var loopHtml = _plagLoopCount < _plagLoopMax - 1 ? `
+        <div class="loop-check-bar">
+          <span class="loop-hint">已检查 ${_plagLoopCount + 1}/${_plagLoopMax} 轮 — 循环检查可提高准确性</span>
+          <button class="btn-sm loop-btn" onclick="runPlagiarismCheck(null, ${_plagLoopCount + 2})">重新检查 (第${_plagLoopCount + 2}轮)</button>
+        </div>` : '<div class="loop-check-bar"><span class="loop-hint" style="color:var(--green)">已完成 ' + _plagLoopMax + ' 轮深度检查</span></div>';
+      updateSidebarContent(`<div class="plagiarism-report-wrapper">${dedupHtml}${loopHtml}<div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">AI 辅助查重，结果仅供参考</div>${marked.parse(data.content)}</div>`);
       document.getElementById('sidebar-body').dataset.originalContent = text;
       document.getElementById('sidebar-body').dataset.plagiarismReport = data.content;
+      _plagLoopCount = loopIteration ? loopIteration : 1;
     }
-  } catch (e) { updateSidebarContent('<p class="error-msg">查重分析失败</p>'); }
-  finally { btn.innerHTML = '🔍 AI 查重'; btn.disabled = false; }
+  } catch (e) { if (e.name !== 'AbortError') updateSidebarContent('<p class="error-msg">查重分析失败</p>'); }
+  finally { setActionLoading('qa-plagiarism-btn', false); _sidebarAbortController = null; }
 }
 
 // Track current dedup mode for smart replace
@@ -2670,7 +3044,7 @@ async function runDedup(mode) {
       dedupResult.innerHTML = `<p class="error-msg">${escapeHtml(data.error)}</p>`;
     } else {
       // Store the rewritten full content for replace
-      dedupResult.dataset.rewrittenContent = data.content;
+      dedupResult.dataset.rewrittenContent = _stripCodeFences(data.content);
       const label = mode === 'flagged' ? '针对性降重结果（仅高风险段落已改写，其余保持原文）' : '全文降重结果';
       dedupResult.innerHTML = `
         <h3>${label}</h3>
@@ -2703,67 +3077,241 @@ function copyDedupResult(btn) {
 }
 
 function replaceWithDedup(btn) {
+  if (btn && btn.disabled) return;  // Guard against double-click
+  if (btn) { btn.disabled = true; btn.textContent = '替换中...'; }
+
   const dedupResult = document.getElementById('dedup-result');
   const rewrittenContent = dedupResult ? dedupResult.dataset.rewrittenContent : '';
   if (!rewrittenContent || !rewrittenContent.trim()) {
-    showToast('没有改写内容可替换'); return;
+    showToast('没有改写内容可替换');
+    if (btn) { btn.disabled = false; btn.textContent = '应用修改到原文'; }
+    return;
   }
 
   const resultContent = getActiveContent();
-  if (!resultContent) return;
+  if (!resultContent) {
+    if (btn) { btn.disabled = false; btn.textContent = '应用修改到原文'; }
+    return;
+  }
 
   if (editModeActive) {
     const textarea = document.getElementById('edit-textarea');
     if (textarea) {
       textarea.value = rewrittenContent;
-      showToast(_dedupMode === 'flagged' ? '已应用针对性修改到编辑区' : '已替换编辑区内容');
+      showToast(_dedupMode === 'flagged' ? '已精准替换高风险段落（其余内容保持原文）' : '已替换编辑区内容');
     }
   } else {
-    resultContent.innerHTML = marked.parse(rewrittenContent);
-    injectCodeCopyButtons(resultContent);
-    injectDisclaimer(resultContent);
-    injectVerificationChecklist(resultContent);
-    injectExplainButtons(resultContent);
-    buildTOC(resultContent);
-    injectDataSourceHighlights(resultContent);
-    const msg = _dedupMode === 'flagged'
-      ? '已应用修改 — 仅高风险段落被改写，其余内容保持原文'
+    // Crossfade to avoid DOM-rebuild flicker
+    resultContent.style.transition = 'opacity .12s ease';
+    resultContent.style.opacity = '0';
+    var finish = function() {
+      renderTo(resultContent, rewrittenContent);
+      injectCodeCopyButtons(resultContent);
+      injectDisclaimer(resultContent);
+      injectVerificationChecklist(resultContent);
+      injectExplainButtons(resultContent);
+      buildTOC(resultContent);
+      injectDataSourceHighlights(resultContent);
+      if (typeof renderMathInElement !== 'undefined') {
+        try { renderMathInElement(resultContent, {delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false},{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}],throwOnError:false}); } catch(e) {}
+      }
+      resultContent.style.opacity = '1';
+      setTimeout(function() { resultContent.style.transition = ''; }, 150);
+      if (btn) { btn.disabled = false; btn.textContent = _dedupMode === 'flagged' ? '应用修改到原文' : '替换原文'; }
+    };
+    setTimeout(finish, 130);
+    var msg = _dedupMode === 'flagged'
+      ? '已精准替换高风险段落，其余内容保持原文不变'
       : '已替换为全文降重版本';
     showToast(msg);
   }
 }
 
-async function runReferenceCheck() {
+
+var _refLoopCount = 0;
+var _refLoopMax = 3;
+
+async function runReferenceCheck(textOverride, loopIteration) {
   const btn = document.getElementById('qa-verify-refs-btn');
   const resultContent = getActiveContent();
-  const text = resultContent ? resultContent.innerText : '';
+  const text = textOverride || (resultContent ? resultContent.innerText : '');
   if (!text.trim()) { showToast('没有可验证的内容'); return; }
 
-  showSidebar('引用验证');
-  btn.innerHTML = '⏳ 验证中...'; btn.disabled = true;
+  if (!loopIteration) { _refLoopCount = 0; }
+  var title = loopIteration ? '引用验证 (第' + loopIteration + '轮)' : '引用验证';
+  showSidebar(title, ['正在提取参考文献...', '正在检索 Semantic Scholar...', '正在生成验证报告...']);
+  setActionLoading('qa-verify-refs-btn', true);
+  updateSidebarProgress(loopIteration ? '第' + loopIteration + '轮验证 — 深度检索中...' : '正在提取参考文献...');
   try {
     const res = await fetch('/api/verify-references', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content: text }),
+      body: JSON.stringify({ content: text, iteration: loopIteration || 1 }),
+      signal: _sidebarAbortController?.signal,
     });
     const data = await res.json();
     if (data.error) {
       updateSidebarContent(`<p class="error-msg">${escapeHtml(data.error)}</p>`);
     } else {
+      var fakeCount = data.fake || 0;
+      var replaceAllBtn = fakeCount > 0 ? `<button class="btn-sm" onclick="replaceAllFakeRefs()" style="background:var(--accent);color:#fff;border:none;margin-bottom:12px">一键替换虚假引用为真实文献</button>` : '';
+      var loopHtml = _refLoopCount < _refLoopMax - 1 ? `
+        <div class="loop-check-bar">
+          <span class="loop-hint">已验证 ${_refLoopCount + 1}/${_refLoopMax} 轮 — 循环验证可提高召回率</span>
+          <button class="btn-sm loop-btn" onclick="runReferenceCheck(null, ${_refLoopCount + 2})">重新验证 (第${_refLoopCount + 2}轮)</button>
+        </div>` : '<div class="loop-check-bar"><span class="loop-hint" style="color:var(--green)">已完成 ' + _refLoopMax + ' 轮深度验证</span></div>';
       updateSidebarContent(`<h3>引用验证报告</h3>
         <div class="verify-summary">
           <span class="verify-stat verified">✓ ${data.verified} 条已验证</span>
           <span class="verify-stat fake">✗ ${data.fake} 条未找到</span>
         </div>
-        ${data.results.map(r => `
+        ${replaceAllBtn}
+        ${loopHtml}
+        ${data.results.map(function(r, i) { return `
           <div class="verify-ref-item ${r.status}">
             <div class="verify-ref-status">${r.status === 'verified' ? '✓ 已验证' : '✗ 未找到匹配'}</div>
             <div class="verify-ref-original"><strong>原文:</strong> ${escapeHtml(r.original).slice(0, 150)}</div>
-            ${r.status === 'verified' ? `<div class="verify-ref-match"><strong>匹配:</strong> ${escapeHtml(r.match_title)}</div>` : '<div class="verify-ref-match"><strong>建议:</strong> 此引用可能为 AI 生成，请手动检索真实文献替换</div>'}
-          </div>`).join('')}`);
+            ${r.status === 'verified' ? '<div class="verify-ref-match"><strong>匹配:</strong> ' + escapeHtml(r.match_title) + (r.match_year ? ' (' + r.match_year + ')' : '') + (r.match_doi ? ' <a href="https://doi.org/' + r.match_doi + '" target="_blank" rel="noopener">DOI</a>' : '') + '</div>' : '<div class="verify-ref-match"><strong>建议:</strong> 此引用可能为 AI 生成，请手动检索真实文献替换 <button class="btn-sm" onclick="fixSingleRef(' + i + ')" style="margin-left:8px">查找真实引用</button></div>'}
+          </div>`; }).join('')}`);
+      // Store results for replace operations
+      document.getElementById('sidebar-body').dataset.refResults = JSON.stringify(data.results);
+      document.getElementById('sidebar-body').dataset.originalContent = text;
+      _refLoopCount = loopIteration ? loopIteration : 1;
     }
-  } catch (e) { updateSidebarContent('<p class="error-msg">引用验证失败</p>'); }
-  finally { btn.innerHTML = '📚 验证引用'; btn.disabled = false; }
+  } catch (e) { if (e.name !== 'AbortError') updateSidebarContent('<p class="error-msg">引用验证失败</p>'); }
+  finally { setActionLoading('qa-verify-refs-btn', false); _sidebarAbortController = null; }
+}
+
+async function fixSingleRef(index) {
+  var sidebarBody = document.getElementById('sidebar-body');
+  var results = JSON.parse(sidebarBody.dataset.refResults || '[]');
+  var ref = results[index];
+  if (!ref) return;
+  updateSidebarProgress('正在检索真实文献替代方案...');
+  try {
+    var res = await fetch('/api/verify-references', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: ref.original, single_ref: true }),
+    });
+    var data = await res.json();
+    if (data.results && data.results[0] && data.results[0].status === 'verified') {
+      var match = data.results[0];
+      showToast('找到真实引用: ' + match.match_title);
+      // Show replacement suggestion
+      var el = document.querySelectorAll('.verify-ref-item')[index];
+      if (el) {
+        el.querySelector('.verify-ref-match').innerHTML = '<strong>替换建议:</strong> ' + escapeHtml(match.match_title || '') + (match.match_authors && match.match_authors.length ? ' (' + match.match_authors.join(', ') + ')' : '') + (match.match_year ? ', ' + match.match_year : '') + ' <button class="btn-sm" onclick="applyRefReplacement(' + index + ')" style="margin-left:8px;background:var(--green);color:#fff;border:none">应用替换</button>';
+      }
+      // Store replacement data
+      if (!sidebarBody.dataset.refReplacements) sidebarBody.dataset.refReplacements = '{}';
+      var replacements = JSON.parse(sidebarBody.dataset.refReplacements);
+      replacements[index] = { original: ref.original, replacement: match.match_title, authors: match.match_authors, year: match.match_year, doi: match.match_doi };
+      sidebarBody.dataset.refReplacements = JSON.stringify(replacements);
+    } else {
+      showToast('未找到匹配的真实文献，请手动检索');
+    }
+  } catch(e) { showToast('检索失败'); }
+}
+
+function applyRefReplacement(index) {
+  var sidebarBody = document.getElementById('sidebar-body');
+  var replacements = JSON.parse(sidebarBody.dataset.refReplacements || '{}');
+  var replacement = replacements[index];
+  if (!replacement) { showToast('没有可用的替换'); return; }
+  var resultContent = getActiveContent();
+  if (!resultContent) return;
+  // Build replacement string with proper formatting
+  var authorShort = replacement.authors && replacement.authors.length > 0 ? replacement.authors[0].split(' ').pop() : '';
+  var newRef = '[' + authorShort + (replacement.year ? ', ' + replacement.year : '') + '] ' + replacement.replacement;
+  if (replacement.doi) newRef += ' doi:' + replacement.doi;
+
+  if (editModeActive) {
+    var textarea = document.getElementById('edit-textarea');
+    if (textarea) {
+      // Replace only the specific reference line in the textarea
+      var text = textarea.value;
+      var origRef = replacement.original.slice(0, 120);
+      var idx = text.indexOf(origRef);
+      if (idx !== -1) {
+        textarea.value = text.slice(0, idx) + newRef + text.slice(idx + origRef.length);
+      } else {
+        // Try a looser match
+        var head = origRef.slice(0, 60);
+        idx = text.indexOf(head);
+        if (idx !== -1) textarea.value = text.slice(0, idx) + newRef + text.slice(idx + head.length);
+        else textarea.value = newRef + '\n' + text;
+      }
+    }
+  } else {
+    // Walk DOM to find and replace only the specific reference text node
+    var origRef = replacement.original.slice(0, 120);
+    _replaceTextInDOM(resultContent, origRef, newRef);
+  }
+  showToast('已替换虚假引用: ' + replacement.replacement.slice(0, 40) + '...');
+  // Refresh the reference check results
+  var results = JSON.parse(sidebarBody.dataset.refResults || '[]');
+  if (results[index]) {
+    results[index].status = 'verified';
+    results[index].match_title = replacement.replacement;
+    results[index].match_authors = replacement.authors || [];
+    results[index].match_year = replacement.year;
+    results[index].match_doi = replacement.doi || '';
+    sidebarBody.dataset.refResults = JSON.stringify(results);
+    var el = document.querySelectorAll('.verify-ref-item')[index];
+    if (el) {
+      el.className = 'verify-ref-item verified';
+      el.querySelector('.verify-ref-status').textContent = '✓ 已验证';
+      el.querySelector('.verify-ref-match').innerHTML = '<strong>匹配:</strong> ' + escapeHtml(replacement.replacement) + ' ✓ 已替换';
+    }
+  }
+}
+
+// Walk DOM tree to find and replace text in the most precise text node
+function _replaceTextInDOM(root, searchText, replacementText) {
+  var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null, false);
+  var remaining = searchText;
+  var node;
+  // Collect candidate text nodes
+  var nodes = [];
+  while (node = walker.nextNode()) {
+    if (node.textContent.trim().length > 10) nodes.push(node);
+  }
+  // Try to find the search text spanning across nodes
+  var fullText = nodes.map(function(n) { return n.textContent; }).join('');
+  var idx = fullText.indexOf(searchText);
+  if (idx === -1) {
+    // Try shorter match
+    var head = searchText.slice(0, 50);
+    idx = fullText.indexOf(head);
+    if (idx === -1) return;
+    searchText = head;
+  }
+  // Find which node contains the match start and apply replacement
+  var runningLen = 0;
+  for (var i = 0; i < nodes.length; i++) {
+    var nodeText = nodes[i].textContent;
+    if (runningLen + nodeText.length > idx) {
+      var localIdx = idx - runningLen;
+      var endInNode = Math.min(localIdx + searchText.length, nodeText.length);
+      var actualSearch = nodeText.slice(localIdx, endInNode);
+      if (actualSearch.length > 0 && searchText.indexOf(actualSearch) !== -1) {
+        nodes[i].textContent = nodeText.slice(0, localIdx) + replacementText + nodeText.slice(endInNode);
+        return; // Replaced in first matching node
+      }
+    }
+    runningLen += nodeText.length;
+  }
+}
+
+function replaceAllFakeRefs() {
+  var sidebarBody = document.getElementById('sidebar-body');
+  var results = JSON.parse(sidebarBody.dataset.refResults || '[]');
+  var fakeIndices = [];
+  results.forEach(function(r, i) { if (r.status !== 'verified') fakeIndices.push(i); });
+  if (fakeIndices.length === 0) { showToast('所有引用已验证'); return; }
+  showToast('正在逐个修复 ' + fakeIndices.length + ' 条虚假引用...');
+  fakeIndices.forEach(function(idx, delay) {
+    setTimeout(function() { fixSingleRef(idx); }, delay * 1500);
+  });
 }
 
 async function runMathCheck() {
@@ -2772,19 +3320,20 @@ async function runMathCheck() {
   const text = resultContent ? resultContent.innerText : '';
   if (!text.trim()) { showToast('没有可验证的内容'); return; }
 
-  showSidebar('数学推导验证');
-  btn.innerHTML = '⏳ 验证中...'; btn.disabled = true;
+  showSidebar('数学推导验证', ['正在提取公式...', '正在独立推导验证...', '正在生成验证报告...']);
+  setActionLoading('qa-verify-math-btn', true);
   try {
     const res = await fetch('/api/verify-math', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ content: text }),
+      signal: _sidebarAbortController?.signal,
     });
     const data = await res.json();
     updateSidebarContent(data.error
       ? `<p class="error-msg">${escapeHtml(data.error)}</p>`
       : `<h3>数学推导验证报告</h3><div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">独立复核结果，请逐项核实</div>${marked.parse(data.content)}`);
-  } catch (e) { updateSidebarContent('<p class="error-msg">数学验证失败</p>'); }
-  finally { btn.innerHTML = '📐 验证推导'; btn.disabled = false; }
+  } catch (e) { if (e.name !== 'AbortError') updateSidebarContent('<p class="error-msg">数学验证失败</p>'); }
+  finally { setActionLoading('qa-verify-math-btn', false); _sidebarAbortController = null; }
 }
 
 // ============================================================
@@ -2800,20 +3349,21 @@ async function runAbstractRefine() {
   const absMatch = text.match(/(?:Abstract|摘要|Summary)[\s\S]{0,3000}/i);
   const abstract = absMatch ? absMatch[0].slice(0, 3000) : text.slice(0, 3000);
 
-  showSidebar('摘要精修');
-  btn.innerHTML = '⏳ 分析中...'; btn.disabled = true;
+  showSidebar('摘要精修', ['正在分析摘要结构...', '正在对照 COMAP 标准...', '正在生成精修建议...']);
+  setActionLoading('qa-abstract-btn', true);
   try {
     const contestType = document.getElementById('paper-contest-type')?.value || 'MCM/ICM';
     const res = await fetch('/api/refine-abstract', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ abstract, contest_type: contestType }),
+      signal: _sidebarAbortController?.signal,
     });
     const data = await res.json();
     updateSidebarContent(data.error
       ? `<p class="error-msg">${escapeHtml(data.error)}</p>`
       : `<h3>摘要精修报告</h3><div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">按 COMAP 标准逐条审查</div>${marked.parse(data.content)}`);
-  } catch (e) { updateSidebarContent('<p class="error-msg">摘要分析失败</p>'); }
-  finally { btn.innerHTML = '📝 摘要精修'; btn.disabled = false; }
+  } catch (e) { if (e.name !== 'AbortError') updateSidebarContent('<p class="error-msg">摘要分析失败</p>'); }
+  finally { setActionLoading('qa-abstract-btn', false); _sidebarAbortController = null; }
 }
 
 // ============================================================
@@ -2829,23 +3379,23 @@ async function runSensitivityAnalysis() {
   const modelDesc = modelMatch ? modelMatch[0].slice(0, 3000) : text.slice(0, 2000);
   const problem = document.getElementById('paper-problem')?.value.trim() || 'the mathematical modeling problem';
 
-  showSidebar('敏感性分析代码');
-  btn.innerHTML = '⏳ 生成代码中...'; btn.disabled = true;
+  showSidebar('敏感性分析代码', ['正在提取模型参数...', '正在生成分析代码...', '正在验证参数范围...']);
+  setActionLoading('qa-sensitivity-btn', true);
   try {
     const contestType = document.getElementById('paper-contest-type')?.value || 'MCM/ICM';
     const res = await fetch('/api/generate-sensitivity', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ problem, model_description: modelDesc, contest_type: contestType }),
+      signal: _sidebarAbortController?.signal,
     });
     const data = await res.json();
     let html = data.error
       ? `<p class="error-msg">${escapeHtml(data.error)}</p>`
       : `<h3>敏感性分析代码</h3><div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">自动生成的敏感性分析 Python 代码</div>${marked.parse(data.content)}`;
     updateSidebarContent(html);
-    // Add copy buttons for code blocks in sidebar
-    setTimeout(() => injectCodeCopyButtons(document.getElementById('sidebar-body')), 100);
-  } catch (e) { updateSidebarContent('<p class="error-msg">敏感性分析生成失败</p>'); }
-  finally { btn.innerHTML = '📊 敏感性分析'; btn.disabled = false; }
+    setTimeout(function() { injectCodeCopyButtons(document.getElementById('sidebar-body')); }, 100);
+  } catch (e) { if (e.name !== 'AbortError') updateSidebarContent('<p class="error-msg">敏感性分析生成失败</p>'); }
+  finally { setActionLoading('qa-sensitivity-btn', false); _sidebarAbortController = null; }
 }
 
 // ============================================================
@@ -2857,20 +3407,21 @@ async function runPaperScore() {
   const text = resultContent ? resultContent.innerText : '';
   if (!text.trim()) { showToast('没有可评分的论文内容'); return; }
 
-  showSidebar('论文评审报告');
-  btn.innerHTML = '⏳ 评分中...'; btn.disabled = true;
+  showSidebar('论文评审报告', ['正在评估创新性...', '正在评估表达质量...', '正在评估建模严谨性...', '正在生成评分报告...']);
+  setActionLoading('qa-score-btn', true);
   try {
     const contestType = document.getElementById('paper-contest-type')?.value || 'MCM/ICM';
     const res = await fetch('/api/score-paper', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ content: text, contest_type: contestType }),
+      signal: _sidebarAbortController?.signal,
     });
     const data = await res.json();
     updateSidebarContent(data.error
       ? `<p class="error-msg">${escapeHtml(data.error)}</p>`
       : `<h3>论文评审报告</h3><div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">按 COMAP 标准评分 (创新40% + 表达30% + 建模30%)</div>${marked.parse(data.content)}`);
-  } catch (e) { updateSidebarContent('<p class="error-msg">论文评分失败</p>'); }
-  finally { btn.innerHTML = '🎯 论文评分'; btn.disabled = false; }
+  } catch (e) { if (e.name !== 'AbortError') updateSidebarContent('<p class="error-msg">论文评分失败</p>'); }
+  finally { setActionLoading('qa-score-btn', false); _sidebarAbortController = null; }
 }
 
 // ============================================================
@@ -2882,22 +3433,23 @@ async function runFigureSuggest() {
   const text = resultContent ? resultContent.innerText : '';
   if (!text.trim()) { showToast('没有可分析的论文内容'); return; }
 
-  showSidebar('图表建议');
-  btn.innerHTML = '⏳ 分析中...'; btn.disabled = true;
+  showSidebar('图表建议', ['正在分析论文结构...', '正在匹配图表类型...', '正在生成 Matplotlib 代码...']);
+  setActionLoading('qa-figures-btn', true);
   try {
     const contestType = document.getElementById('paper-contest-type')?.value || 'MCM/ICM';
     const res = await fetch('/api/suggest-figures', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ content: text, contest_type: contestType }),
+      signal: _sidebarAbortController?.signal,
     });
     const data = await res.json();
     let html = data.error
       ? `<p class="error-msg">${escapeHtml(data.error)}</p>`
       : `<h3>图表建议与代码</h3><div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">论文各章节推荐图表及其 matplotlib 代码</div>${marked.parse(data.content)}`;
     updateSidebarContent(html);
-    setTimeout(() => injectCodeCopyButtons(document.getElementById('sidebar-body')), 100);
-  } catch (e) { updateSidebarContent('<p class="error-msg">图表建议生成失败</p>'); }
-  finally { btn.innerHTML = '📈 图表建议'; btn.disabled = false; }
+    setTimeout(function() { injectCodeCopyButtons(document.getElementById('sidebar-body')); }, 100);
+  } catch (e) { if (e.name !== 'AbortError') updateSidebarContent('<p class="error-msg">图表建议生成失败</p>'); }
+  finally { setActionLoading('qa-figures-btn', false); _sidebarAbortController = null; }
 }
 
 // ============================================================
@@ -2909,17 +3461,18 @@ async function runMockReview() {
   const content = resultContent ? resultContent.innerText : '';
   if (!content.trim()) { showToast('没有可评审的内容'); return; }
 
-  showSidebar('模拟评审');
-  btn.innerHTML = '⏳ 评审中...'; btn.disabled = true;
+  showSidebar('模拟评审', ['正在阅读全文...', '正在评估创新性...', '正在检查表达质量...', '正在生成评审意见...']);
+  setActionLoading('qa-review-btn', true);
   try {
     const res = await fetch('/api/mock-review', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ content }),
+      signal: _sidebarAbortController?.signal,
     });
     const data = await res.json();
     updateSidebarContent(data.error ? `<p class="error-msg">${escapeHtml(data.error)}</p>` : marked.parse(data.content));
-  } catch (e) { updateSidebarContent('<p class="error-msg">模拟评审失败</p>'); }
-  finally { btn.innerHTML = '🏅 模拟评审'; btn.disabled = false; }
+  } catch (e) { if (e.name !== 'AbortError') updateSidebarContent('<p class="error-msg">模拟评审失败</p>'); }
+  finally { setActionLoading('qa-review-btn', false); _sidebarAbortController = null; }
 }
 
 // ============================================================
@@ -2937,20 +3490,21 @@ async function runPaperCompare() {
     return;
   }
 
-  showSidebar('论文对比');
-  btn.innerHTML = '⏳ 对比中...'; btn.disabled = true;
+  showSidebar('论文对比', ['正在提取各版本内容...', '正在逐项对比分析...', '正在生成对比报告...']);
+  setActionLoading('qa-compare-btn', true);
   try {
     const contestType = document.getElementById('paper-contest-type')?.value || 'MCM/ICM';
     const res = await fetch('/api/compare-papers', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ content_a: history[0].content.slice(0, 4000), content_b: text.slice(0, 4000), contest_type: contestType }),
+      signal: _sidebarAbortController?.signal,
     });
     const data = await res.json();
     updateSidebarContent(data.error
       ? `<p class="error-msg">${escapeHtml(data.error)}</p>`
       : `<h3>论文对比报告</h3><div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">当前版本 vs 上一版 (${escapeHtml(history[0].problem).slice(0, 60)}...)</div>${marked.parse(data.content)}`);
-  } catch (e) { updateSidebarContent('<p class="error-msg">论文对比失败</p>'); }
-  finally { btn.innerHTML = '🔄 对比论文'; btn.disabled = false; }
+  } catch (e) { if (e.name !== 'AbortError') updateSidebarContent('<p class="error-msg">论文对比失败</p>'); }
+  finally { setActionLoading('qa-compare-btn', false); _sidebarAbortController = null; }
 }
 
 // ============================================================
