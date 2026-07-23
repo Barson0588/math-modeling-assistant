@@ -31,15 +31,27 @@
 <script>
 (function() {
   var welcome = document.getElementById('mma-welcome');
+
+  function hideWelcome() {
+    welcome.classList.add('dismissing');
+    setTimeout(function() { welcome.hidden = true; welcome.classList.remove('dismissing'); }, 500);
+  }
+
+  function showWelcome() {
+    welcome.hidden = false;
+    welcome.classList.remove('dismissing');
+  }
+
+  window.replayWelcome = function() {
+    showWelcome();
+  };
+
   var shown = sessionStorage.getItem('mma-welcome-shown');
   if (shown) {
-    welcome.remove();
+    welcome.hidden = true;
   } else {
     sessionStorage.setItem('mma-welcome-shown', '1');
-    welcome.addEventListener('click', function() {
-      welcome.classList.add('dismissing');
-      setTimeout(function() { welcome.remove(); }, 500);
-    });
+    welcome.addEventListener('click', function() { hideWelcome(); });
   }
 })();
 </script>
@@ -475,6 +487,7 @@
 
 <footer>
   <p>Math Modeling Assistant &middot; Powered by DeepSeek &middot; For MCM/ICM & CUMCM <span class="shortcuts-hint" title="键盘快捷键" onclick="showShortcuts()">?</span></p>
+  <button class="replay-intro-btn" onclick="replayWelcome()" title="重播启动动画">&#9654; 启动动画</button>
 </footer>
 
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
