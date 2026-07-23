@@ -101,19 +101,8 @@ window.fetch = function(url, options = {}) {
   return _originalFetch.call(this, url, options);
 };
 
-// Auto-show on first visit
-(function checkFirstVisit() {
-  if (!hasApiKey()) {
-    function showWhenReady() {
-      setTimeout(showSetupModal, 500);
-    }
-    if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', showWhenReady);
-    } else {
-      showWhenReady();
-    }
-  }
-})();
+// API key modal is now triggered from login flow / account panel / settings gear
+// No more auto-popup on first visit — login is the primary onboarding path
 
 // ============================================================
 // Markdown + LaTeX rendering helper
@@ -869,15 +858,24 @@ generateBtn.addEventListener('click', async () => {
   aiReportBtn.disabled = true;
   if (window.advanceStep) window.advanceStep(2);
   resultDiv.classList.add('visible');
+  resultContent.classList.remove('content-ready');
+  var startTime = Date.now();
   resultContent.innerHTML = '<div class="progress-card" id="gen-progress-card">' +
-    '<div class="progress-header"><span class="progress-title">生成进度</span></div>' +
+    '<div class="progress-header"><span class="progress-title">生成进度</span><span class="progress-elapsed" id="gen-elapsed"></span></div>' +
     '<div class="progress-stages" id="gen-stages"></div></div>' +
-    '<div class="stage-indicator"><span class="stage-dot"></span>准备中...<button class="btn-sm cancel-gen-btn" id="gen-cancel-btn">取消</button></div>';
+    '<div class="stage-indicator"><span class="stage-dot pulse"></span>正在连接 AI 服务...<button class="btn-sm cancel-gen-btn" id="gen-cancel-btn">取消</button></div>';
   resultLabel.textContent = '生成结果';
   resultDiv.scrollIntoView({ behavior: 'smooth' });
   const stageEl = resultContent.querySelector('.stage-indicator');
+  // Elapsed time updater
+  var elapsedTimer = setInterval(function() {
+    var elapsed = Math.floor((Date.now() - startTime) / 1000);
+    var el = document.getElementById('gen-elapsed');
+    if (el) el.textContent = elapsed + 's';
+  }, 1000);
   document.getElementById('gen-cancel-btn').addEventListener('click', () => {
     if (_activeController) { _activeController.abort(); _cancelBtnClicked = true; }
+    clearInterval(elapsedTimer);
   });
 
   let fullContent = '';
@@ -929,16 +927,16 @@ generateBtn.addEventListener('click', async () => {
             }
             fullContent += data;
             chunkCount++;
-            // Throttled stage detection (A3)
-            if (chunkCount % 20 === 0 && stageEl) {
+            // Throttled stage detection — more frequent updates
+            if (chunkCount % 12 === 0 && stageEl) {
               var newStage = detectStage(fullContent);
               if (newStage !== lastStageText) {
                 lastStageText = newStage;
-                stageEl.innerHTML = '<span class="stage-dot"></span>' + newStage;
+                stageEl.innerHTML = '<span class="stage-dot pulse"></span>' + newStage;
               }
             }
             // Truly incremental — only append new content, never rebuild old DOM
-            if (fullContent.length - lastRenderedLen >= 80 || fullContent.length < 200) {
+            if (fullContent.length - lastRenderedLen >= 50 || fullContent.length < 200) {
               var newText = fullContent.slice(lastRenderedLen);
               // Find safe break point (paragraph boundary) to avoid splitting markdown constructs
               var safeBreak = newText.lastIndexOf('\n\n');
@@ -972,10 +970,16 @@ generateBtn.addEventListener('click', async () => {
     // Remove streaming cursor
     var cursor = resultContent.querySelector('.streaming-cursor-el');
     if (cursor) cursor.remove();
+    clearInterval(elapsedTimer);
+    // Update elapsed to show final time
+    var finalElapsed = Math.floor((Date.now() - startTime) / 1000);
+    var el2 = document.getElementById('gen-elapsed');
+    if (el2) el2.textContent = finalElapsed + 's (完成)';
     // Mark all stages done
     finishAllStages('gen-stages');
     // Final render — batch all post-completion injections in rAF (A4)
     renderTo(resultContent, fullContent);
+    resultContent.classList.add('content-ready');
     requestAnimationFrame(function() {
       injectCodeCopyButtons(resultContent);
       buildTOC(resultContent);
@@ -1001,10 +1005,14 @@ generateBtn.addEventListener('click', async () => {
     }
   } catch (e) {
     _activeController = null;
+    clearInterval(elapsedTimer);
+    var fe = document.getElementById('gen-elapsed');
+    if (fe) fe.textContent = Math.floor((Date.now() - startTime) / 1000) + 's (中断)';
     if (e.name === 'AbortError') {
       // Cancelled by user - keep partial content
       if (fullContent) {
         renderTo(resultContent, fullContent);
+        resultContent.classList.add('content-ready');
         injectCodeCopyButtons(resultContent);
         buildTOC(resultContent);
         injectDisclaimer(resultContent);
@@ -1022,6 +1030,7 @@ generateBtn.addEventListener('click', async () => {
       resultContent.innerHTML = (fullContent ? renderMarkdown(fullContent) + '<hr>' : '') +
         `<p class="error-msg">生成中断: ${escapeHtml(e.message || '连接断开')} <button class="btn-sm" onclick="generateBtn.click()">重新生成</button></p>`;
       if (fullContent) {
+        resultContent.classList.add('content-ready');
         injectCodeCopyButtons(resultContent);
         injectQuickActions();
         saveHistory(problem, contestType, problemType, fullContent);
@@ -1203,6 +1212,7 @@ paperGenerateBtn.addEventListener('click', async () => {
 
   setButtonsLoading(paperGenerateBtn, true);
   paperResult.classList.add('visible');
+  paperContent.classList.remove('content-ready');
   paperContent.innerHTML = '<div class="progress-card" id="paper-progress-card">' +
     '<div class="progress-header"><span class="progress-title">生成进度</span></div>' +
     '<div class="progress-stages" id="paper-stages"></div></div>' +
@@ -1306,6 +1316,7 @@ paperGenerateBtn.addEventListener('click', async () => {
     finishAllStages('paper-stages');
     // Final render — batch post-completion injections in rAF (A4)
     renderTo(paperContent, fullContent);
+    paperContent.classList.add('content-ready');
     requestAnimationFrame(function() {
       injectCodeCopyButtons(paperContent);
       injectDisclaimer(paperContent);
@@ -1332,6 +1343,7 @@ paperGenerateBtn.addEventListener('click', async () => {
     if (e.name === 'AbortError') {
       if (fullContent) {
         renderTo(paperContent, fullContent);
+        paperContent.classList.add('content-ready');
         injectCodeCopyButtons(paperContent);
         injectDisclaimer(paperContent);
         injectVerificationChecklist(paperContent);
@@ -1348,6 +1360,7 @@ paperGenerateBtn.addEventListener('click', async () => {
       paperContent.innerHTML = (fullContent ? renderMarkdown(fullContent) + '<hr>' : '') +
         `<p class="error-msg">生成中断: ${escapeHtml(e.message || '连接断开')} <button class="btn-sm" onclick="paperGenerateBtn.click()">重新生成</button></p>`;
       if (fullContent) {
+        paperContent.classList.add('content-ready');
         injectCodeCopyButtons(paperContent);
         injectQuickActions();
         savePaperHistory(problem, contestType, problemType, fullContent);
@@ -2681,6 +2694,17 @@ function sendToPaper(index) {
 }
 
 // ============================================================
+// LaTeX Export — trigger the paper-tex-btn to generate .tex
+// ============================================================
+function exportLatex() {
+  var texBtn = document.getElementById('paper-tex-btn');
+  if (texBtn && !texBtn.disabled) {
+    texBtn.click();
+  } else {
+    showToast('请先在论文排版标签页生成论文内容');
+  }
+}
+
 // Project Export Bundle — package all content as ZIP
 // ============================================================
 async function exportProjectBundle() {
@@ -2745,27 +2769,105 @@ async function exportProjectBundle() {
 // Quick Actions Bar — prominent edit + verify buttons
 // ============================================================
 function injectQuickActions() {
-  const resultCard = document.querySelector('.result-card.visible, .paper-result-card.visible');
+  var resultCard = document.getElementById('result');
+  var paperResultCard = document.getElementById('paper-result');
+  // Use actual rendered visibility (offsetParent), not hidden attr
+  if (resultCard && resultCard.offsetParent === null) resultCard = null;
+  if (paperResultCard && paperResultCard.offsetParent === null) paperResultCard = null;
+  resultCard = resultCard || paperResultCard;
   if (!resultCard || resultCard.querySelector('.quick-actions-bar')) return;
 
-  const bar = document.createElement('div');
+  // Build drawer-group tool categories
+  var groups = [
+    { label: '质量检查', icon: '&#128269;', items: [
+      { id: 'qa-plagiarism-btn', cls: 'plagiarism-action', text: 'AI 查重', tip: 'AI 分析论文原创性，检测模板化内容和潜在雷同', handler: 'runPlagiarismCheck' },
+      { id: 'qa-verify-refs-btn', cls: 'verify-refs-action', text: '验证引用', tip: '交叉验证参考文献是否真实存在', handler: 'runReferenceCheck' },
+      { id: 'qa-verify-math-btn', cls: 'verify-math-action', text: '验证推导', tip: '独立复核数学推导的正确性', handler: 'runMathCheck' },
+      { id: 'qa-score-btn', cls: 'score-action', text: '论文评分', tip: '按 COMAP 评审标准打分', handler: 'runPaperScore' },
+      { id: 'qa-review-btn', cls: 'review-action', text: '模拟评审', tip: 'AI 扮演 COMAP 评委，按官方评分标准逐项打分', handler: 'runMockReview' },
+    ]},
+    { label: '内容增强', icon: '&#128200;', items: [
+      { id: 'qa-abstract-btn', cls: 'abstract-action', text: '摘要精修', tip: '按 COMAP 标准逐条审查优化摘要', handler: 'runAbstractRefine' },
+      { id: 'qa-sensitivity-btn', cls: 'sensitivity-action', text: '敏感性分析', tip: '生成敏感性分析 Python 代码', handler: 'runSensitivityAnalysis' },
+      { id: 'qa-figures-btn', cls: 'figures-action', text: '图表建议', tip: '智能推荐论文需要的图表并生成代码', handler: 'runFigureSuggest' },
+    ]},
+    { label: '编辑管理', icon: '&#128221;', items: [
+      { id: 'qa-edit-btn', cls: 'edit-action', text: '编辑论文', tip: '切换编辑 / 预览模式，可直接修改论文内容', handler: 'toggleEditMode' },
+      { id: 'qa-compare-btn', cls: 'compare-action', text: '对比论文', tip: '与上一版论文并排对比分析', handler: 'runPaperCompare' },
+      { id: 'qa-latex-btn', cls: 'export-action', text: '导出 LaTeX', tip: '生成并下载 .tex 源文件', handler: 'exportLatex' },
+      { id: 'qa-export-btn', cls: 'export-action', text: '导出项目', tip: '打包导出论文.md + 代码.py + 参考文献.bib', handler: 'exportProjectBundle' },
+    ]},
+  ];
+
+  var bar = document.createElement('div');
   bar.className = 'quick-actions-bar';
-  bar.innerHTML = '<span class="quick-actions-label">质量检查</span>' +
-    '<button class="quick-action-btn plagiarism-action" id="qa-plagiarism-btn" title="AI 分析论文原创性，检测模板化内容和潜在雷同">&#128269; AI 查重</button>' +
-    '<button class="quick-action-btn verify-refs-action" id="qa-verify-refs-btn" title="交叉验证参考文献是否真实存在">&#128214; 验证引用</button>' +
-    '<button class="quick-action-btn verify-math-action" id="qa-verify-math-btn" title="独立复核数学推导的正确性">&#128208; 验证推导</button>' +
-    '<button class="quick-action-btn score-action" id="qa-score-btn" title="按 COMAP 评审标准打分">&#127919; 论文评分</button>' +
-    '<button class="quick-action-btn review-action" id="qa-review-btn" title="AI 扮演 COMAP 评委，按官方评分标准逐项打分">&#127941; 模拟评审</button>' +
-    '<span class="quick-actions-sep"></span>' +
-    '<span class="quick-actions-label">内容增强</span>' +
-    '<button class="quick-action-btn abstract-action" id="qa-abstract-btn" title="按 COMAP 标准逐条审查优化摘要">&#128221; 摘要精修</button>' +
-    '<button class="quick-action-btn sensitivity-action" id="qa-sensitivity-btn" title="生成敏感性分析 Python 代码">&#128202; 敏感性分析</button>' +
-    '<button class="quick-action-btn figures-action" id="qa-figures-btn" title="智能推荐论文需要的图表并生成代码">&#128200; 图表建议</button>' +
-    '<span class="quick-actions-sep"></span>' +
-    '<span class="quick-actions-label">编辑管理</span>' +
-    '<button class="quick-action-btn edit-action" id="qa-edit-btn" title="切换编辑 / 预览模式，可直接修改论文内容">&#9999; 编辑论文</button>' +
-    '<button class="quick-action-btn compare-action" id="qa-compare-btn" title="与上一版论文并排对比分析">&#128260; 对比论文</button>' +
-    '<button class="quick-action-btn export-action" id="qa-export-btn" title="打包导出论文.md + 代码.py + 参考文献.bib">&#128230; 导出项目</button>';
+
+  // Map of handler names → functions
+  var handlerMap = {
+    runPlagiarismCheck: runPlagiarismCheck,
+    runReferenceCheck: runReferenceCheck,
+    runMathCheck: runMathCheck,
+    runPaperScore: runPaperScore,
+    runMockReview: runMockReview,
+    runAbstractRefine: runAbstractRefine,
+    runSensitivityAnalysis: runSensitivityAnalysis,
+    runFigureSuggest: runFigureSuggest,
+    toggleEditMode: toggleEditMode,
+    runPaperCompare: runPaperCompare,
+    exportLatex: exportLatex,
+    exportProjectBundle: exportProjectBundle,
+  };
+
+  groups.forEach(function(group) {
+    var wrapper = document.createElement('div');
+    wrapper.className = 'qa-group';
+
+    var btn = document.createElement('button');
+    btn.className = 'qa-group-btn';
+    btn.innerHTML = '<span>' + group.icon + '</span> ' + group.label + ' <span class="qa-group-count">' + group.items.length + '</span>';
+    btn.title = group.label;
+    wrapper.appendChild(btn);
+
+    var panel = document.createElement('div');
+    panel.className = 'qa-group-panel';
+    group.items.forEach(function(item) {
+      var itemBtn = document.createElement('button');
+      itemBtn.className = 'quick-action-btn ' + item.cls;
+      itemBtn.id = item.id;
+      itemBtn.title = item.tip;
+      itemBtn.textContent = item.text;
+      itemBtn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        var fn = handlerMap[item.handler];
+        if (fn) fn();
+      });
+      panel.appendChild(itemBtn);
+    });
+    wrapper.appendChild(panel);
+
+    // Toggle dropdown on group button click
+    btn.addEventListener('click', function(e) {
+      e.stopPropagation();
+      var isOpen = panel.classList.contains('open');
+      // Close all other panels
+      bar.querySelectorAll('.qa-group-panel.open').forEach(function(p) { p.classList.remove('open'); });
+      bar.querySelectorAll('.qa-group-btn.active').forEach(function(b) { b.classList.remove('active'); });
+      if (!isOpen) {
+        panel.classList.add('open');
+        btn.classList.add('active');
+      }
+    });
+
+    bar.appendChild(wrapper);
+  });
+
+  // Close dropdowns when clicking outside
+  document.addEventListener('click', function(e) {
+    if (!bar.contains(e.target)) {
+      bar.querySelectorAll('.qa-group-panel.open').forEach(function(p) { p.classList.remove('open'); });
+      bar.querySelectorAll('.qa-group-btn.active').forEach(function(b) { b.classList.remove('active'); });
+    }
+  });
 
   var toolbar = resultCard.querySelector('.result-toolbar');
   if (toolbar) {
@@ -2773,19 +2875,6 @@ function injectQuickActions() {
   } else {
     resultCard.insertBefore(bar, resultCard.firstChild);
   }
-
-  // Wire up buttons
-  bar.querySelector('#qa-edit-btn').addEventListener('click', toggleEditMode);
-  bar.querySelector('#qa-abstract-btn').addEventListener('click', runAbstractRefine);
-  bar.querySelector('#qa-plagiarism-btn').addEventListener('click', runPlagiarismCheck);
-  bar.querySelector('#qa-sensitivity-btn').addEventListener('click', runSensitivityAnalysis);
-  bar.querySelector('#qa-verify-refs-btn').addEventListener('click', runReferenceCheck);
-  bar.querySelector('#qa-verify-math-btn').addEventListener('click', runMathCheck);
-  bar.querySelector('#qa-score-btn').addEventListener('click', runPaperScore);
-  bar.querySelector('#qa-figures-btn').addEventListener('click', runFigureSuggest);
-  bar.querySelector('#qa-compare-btn').addEventListener('click', runPaperCompare);
-  bar.querySelector('#qa-review-btn').addEventListener('click', runMockReview);
-  bar.querySelector('#qa-export-btn').addEventListener('click', exportProjectBundle);
 }
 
 // ============================================================
@@ -3511,7 +3600,9 @@ async function runPaperCompare() {
 // Smart Model Recommendation — for Generator tab
 // ============================================================
 function injectModelRecommendBtn() {
-  const actions = document.querySelector('.result-card.visible .result-actions');
+  var resultCard = document.getElementById('result');
+  if (!resultCard || resultCard.offsetParent === null) return;
+  var actions = resultCard.querySelector('.result-actions');
   if (!actions || actions.querySelector('.model-recommend-btn')) return;
 
   const btn = document.createElement('button');
@@ -3550,8 +3641,9 @@ function injectModelRecommendBtn() {
 // Paper Word/Page Stats
 // ============================================================
 function injectPaperStats() {
-  const resultCard = document.querySelector('.paper-result-card.visible');
-  if (!resultCard || resultCard.querySelector('.paper-stats')) return;
+  var resultCard = document.getElementById('paper-result');
+  if (!resultCard || resultCard.offsetParent === null) return;
+  if (resultCard.querySelector('.paper-stats')) return;
 
   const content = paperContent.innerText || '';
   const words = content.trim() ? content.trim().split(/\s+/).length : 0;

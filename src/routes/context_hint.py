@@ -46,6 +46,9 @@ COMPLETION_HINTS = [
     '框架已生成。建议检查"模型假设"部分是否包含了数据来源说明。',
     '生成完成！要不要我帮你验证一下参考文献的真实性？',
     '框架生成完毕。下一阶段可以生成完整论文，或者先做敏感性分析。',
+    '整体框架已输出。切换模型假设或符号说明部分，检查是否需要补充细节。',
+    '生成结束了。建议现在切换到 Paper 页面，让写作手帮你完善整篇论文。',
+    '好的，内容已经出来了。你可以点"生成论文"把框架扩展成完整格式，也可以先看看推荐模型。',
 ]
 
 
@@ -83,10 +86,15 @@ def get_hint():
         hint_text = '看起来遇到困难了？需要我帮忙分析问题、推荐模型、或者解释某个概念吗？直接问我吧。'
         actions = [{'label': '帮我分析题目', 'payload': 'analyze_problem'}]
 
-    # 4. Tab switch to models
-    if tab == 'models' and last_action == 'tab_switch':
-        hint_text = f'你正在处理 {problem_type} 题，以下是推荐模型。点击可查看详细说明和代码示例。'
-        actions = [{'label': '自动筛选推荐模型', 'payload': 'filter_recommended'}]
+    # 4. Tab switch (context-aware)
+    if last_action == 'tab_switch' and problem_text:
+        if tab == 'models':
+            type_label = problem_type if problem_type else '当前'
+            hint_text = f'你正在处理 {type_label} 题，以下是推荐模型。点击可查看详细说明和代码示例。'
+            actions = [{'label': '自动筛选推荐模型', 'payload': 'filter_recommended'}]
+        elif tab == 'paper':
+            hint_text = '切换到论文页面了。写作手已就位，可以在此生成或查看完整论文。'
+            actions = [{'label': '查看论文要求', 'payload': 'open_paper_tab'}]
 
     if not hint_text:
         hint_text = ''

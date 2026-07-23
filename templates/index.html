@@ -15,44 +15,52 @@
 <body>
 
 <!-- MMA Welcome Screen -->
-<div id="mma-welcome" class="mma-welcome">
+<div id="mma-welcome" class="mma-welcome" onclick="var w=this;w.style.opacity='0';w.style.pointerEvents='none';w.style.transition='opacity .35s ease';setTimeout(function(){w.style.display='none'},350)">
   <div class="mma-welcome-blobs">
     <div class="mma-blob blob-1"></div>
     <div class="mma-blob blob-2"></div>
     <div class="mma-blob blob-3"></div>
     <div class="mma-blob blob-4"></div>
+    <div class="mma-blob blob-5"></div>
   </div>
-  <div class="mma-welcome-glass">
+  <div class="mma-welcome-text">
     <h1 class="mma-welcome-title">MMA</h1>
     <p class="mma-welcome-subtitle">数学建模 · 智能辅助 · 从选题到成稿</p>
-    <p class="mma-welcome-hint">点击任意位置开始</p>
+    <p class="mma-welcome-hint">轻触任意位置开始</p>
   </div>
 </div>
 <script>
 (function() {
   var welcome = document.getElementById('mma-welcome');
 
-  function hideWelcome() {
-    welcome.classList.add('dismissing');
-    setTimeout(function() { welcome.hidden = true; welcome.classList.remove('dismissing'); }, 500);
-  }
-
-  function showWelcome() {
-    welcome.hidden = false;
-    welcome.classList.remove('dismissing');
-  }
-
   window.replayWelcome = function() {
-    showWelcome();
+    welcome.style.display = '';
+    welcome.style.opacity = '1';
+    welcome.style.pointerEvents = '';
+    // Re-trigger entrance animation
+    var text = welcome.querySelector('.mma-welcome-text');
+    if (text) { text.style.animation = 'none'; text.offsetHeight; text.style.animation = ''; }
   };
 
-  var shown = sessionStorage.getItem('mma-welcome-shown');
-  if (shown) {
-    welcome.hidden = true;
+  if (sessionStorage.getItem('mma-welcome-shown')) {
+    welcome.style.display = 'none';
   } else {
     sessionStorage.setItem('mma-welcome-shown', '1');
-    welcome.addEventListener('click', function() { hideWelcome(); });
   }
+
+  // Mouse parallax — text follows cursor slightly
+  var title = welcome.querySelector('.mma-welcome-title');
+  var subtitle = welcome.querySelector('.mma-welcome-subtitle');
+  welcome.addEventListener('mousemove', function(e) {
+    var x = (e.clientX / window.innerWidth - 0.5) * 12;
+    var y = (e.clientY / window.innerHeight - 0.5) * 12;
+    if (title) title.style.transform = 'translate(' + x + 'px,' + y + 'px)';
+    if (subtitle) subtitle.style.transform = 'translate(' + (x * 0.5) + 'px,' + (y * 0.5) + 'px)';
+  });
+  welcome.addEventListener('mouseleave', function() {
+    if (title) title.style.transform = 'translate(0,0)';
+    if (subtitle) subtitle.style.transform = 'translate(0,0)';
+  });
 })();
 </script>
 
@@ -398,7 +406,7 @@
 <div id="setup-modal" class="overlay setup-overlay" hidden>
   <div class="overlay-card setup-card">
     <h2>配置 API Key</h2>
-    <p style="margin-bottom:16px;color:var(--text-secondary);font-size:14px">
+    <p class="setup-desc" style="margin-bottom:16px;color:var(--text-secondary);font-size:14px">
       请输入你的 DeepSeek API Key 以使用 AI 生成功能。
       <a href="https://platform.deepseek.com/api_keys" target="_blank" rel="noopener">免费获取 Key →</a>
     </p>
@@ -470,7 +478,7 @@
 
 <!-- AI Teammate -->
 <button id="teammate-btn" class="teammate-float-btn" title="AI 队友">
-  <span class="teammate-avatar">📐</span>
+  <div class="teammate-avatar-icon avatar-architect"></div>
   <span id="teammate-badge" class="teammate-badge" hidden>0</span>
 </button>
 
@@ -618,7 +626,11 @@
     authApi('/api/auth/login', { email: email, password: password }).then(function(r) {
       setBtnLoading('modal-login-btn', false);
       if (r.status === 200) {
-        syncLocalData().then(function() { location.reload(); });
+        syncLocalData().then(function() {
+          // Flag: after reload, check if key is needed
+          sessionStorage.setItem('mma-post-login', '1');
+          location.reload();
+        });
       } else {
         loginError.textContent = r.data.error || '登录失败';
         loginError.hidden = false;
@@ -670,11 +682,17 @@
     }
   });
 
-  document.getElementById('account-setup-key-btn').addEventListener('click', function() {
+  function openSetupFromAccount() {
     accountPanel.hidden = true;
     var setupModal = document.getElementById('setup-modal');
     if (setupModal) setupModal.hidden = false;
-  });
+    var descEl = setupModal && setupModal.querySelector('.setup-desc');
+    if (descEl) descEl.innerHTML = '请输入你的 DeepSeek API Key 以使用 AI 生成功能。<br><a href="https://platform.deepseek.com/api_keys" target="_blank" rel="noopener">免费获取 Key →</a>';
+    var input = document.getElementById('setup-key-input');
+    if (input) input.focus();
+  }
+  document.getElementById('account-setup-key-btn').addEventListener('click', openSetupFromAccount);
+  document.getElementById('account-key-status').addEventListener('click', openSetupFromAccount);
 
   document.getElementById('account-logout-btn').addEventListener('click', function() {
     fetch('/api/auth/logout', { method: 'POST' }).then(function() { location.reload(); });
@@ -702,6 +720,25 @@
       if (data.has_api_key) {
         keyStatus.innerHTML = '&#10003; API Key 已配置';
         keyStatus.className = 'account-key-status has-key';
+      } else {
+        keyStatus.innerHTML = '&#9888; 点击配置 API Key';
+        keyStatus.className = 'account-key-status no-key';
+      }
+      // Post-login: if just logged in and no key, open setup modal directly
+      if (sessionStorage.getItem('mma-post-login')) {
+        sessionStorage.removeItem('mma-post-login');
+        if (!data.has_api_key && !(localStorage.getItem('mma-api-key')||'').startsWith('sk-')) {
+          setTimeout(function() {
+            var setupModal = document.getElementById('setup-modal');
+            var descEl = setupModal && setupModal.querySelector('.setup-desc');
+            if (descEl) {
+              descEl.innerHTML = '登录成功！请输入你的 DeepSeek API Key 以使用 AI 生成功能。<br><a href="https://platform.deepseek.com/api_keys" target="_blank" rel="noopener">免费获取 Key →</a>';
+            }
+            if (setupModal) setupModal.hidden = false;
+            var input = document.getElementById('setup-key-input');
+            if (input) setTimeout(function() { input.focus(); }, 200);
+          }, 600);
+        }
       }
       // Dismiss any guidance
       dismissGuidance();
@@ -758,9 +795,162 @@
     });
   }
 
+  // ---- Login spotlight (frosted blur + floating pill) ----
+  var spotlightOverlay = null;
+
+  function buildSpotlight() {
+    if (currentUser) return;
+    if (sessionStorage.getItem('mma-spotlight-dismissed')) return;
+    if (spotlightOverlay) return;
+    if (!loginLink || loginLink.hidden) return;
+
+    var welcome = document.getElementById('mma-welcome');
+    if (welcome && welcome.style.display !== 'none') return;
+
+    var rect = loginLink.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return;
+
+    var cx = rect.left + rect.width / 2;
+    var cy = rect.top + rect.height / 2;
+    var holeR = Math.max(rect.width, rect.height) / 2 + 14;
+
+    // Overlay: frosted blur, masked with radial gradient to keep button area clear
+    var overlay = document.createElement('div');
+    overlay.className = 'login-spotlight-overlay';
+    var maskVal = 'radial-gradient(circle ' + holeR + 'px at ' + cx + 'px ' + cy + 'px, transparent ' + holeR + 'px, black ' + (holeR + 8) + 'px)';
+    overlay.style.maskImage = maskVal;
+    overlay.style.webkitMaskImage = maskVal;
+
+    // Soft aurora glow ring behind the button
+    var aurora = document.createElement('div');
+    aurora.className = 'login-spotlight-aurora';
+    var auroraSize = holeR * 2 + 20;
+    aurora.style.width = auroraSize + 'px';
+    aurora.style.height = auroraSize + 'px';
+    aurora.style.left = (cx - auroraSize / 2) + 'px';
+    aurora.style.top = (cy - auroraSize / 2) + 'px';
+
+    // Floating glass pill in a wrapper to avoid transform conflicts
+    var pillWrap = document.createElement('div');
+    pillWrap.style.cssText = 'position:absolute;pointer-events:none';
+    var pill = document.createElement('div');
+    pill.className = 'login-spotlight-pill';
+    pill.innerHTML = '<span class="pill-dot"></span>点击登录';
+    pillWrap.appendChild(pill);
+
+    var pillLeft = rect.right + 18;
+    if (pillLeft + 130 > window.innerWidth - 24) {
+      // Not enough room to the right — float above the button
+      pillWrap.style.left = cx + 'px';
+      pillWrap.style.top = (rect.top - 50) + 'px';
+      pillWrap.style.transform = 'translateX(-50%)';
+    } else {
+      pillWrap.style.left = pillLeft + 'px';
+      pillWrap.style.top = cy + 'px';
+      pillWrap.style.transform = 'translateY(-50%)';
+    }
+
+    // Dismiss hint
+    var dismiss = document.createElement('div');
+    dismiss.className = 'login-spotlight-dismiss';
+    dismiss.textContent = '点击任意位置关闭提示';
+
+    overlay.appendChild(aurora);
+    overlay.appendChild(pillWrap);
+    overlay.appendChild(dismiss);
+
+    overlay.addEventListener('click', function(e) {
+      var dist = Math.sqrt(Math.pow(e.clientX - cx, 2) + Math.pow(e.clientY - cy, 2));
+      if (dist < holeR + 6) {
+        // Click on the clear area — open login modal
+        dismissSpotlight();
+        openLoginModal('login');
+      } else {
+        // Click on blurred area — just dismiss
+        dismissSpotlight();
+      }
+    });
+
+    document.body.appendChild(overlay);
+    spotlightOverlay = overlay;
+
+    // Reposition on resize
+    var resizeHandler = function() {
+      if (!spotlightOverlay) return;
+      var r2 = loginLink.getBoundingClientRect();
+      if (r2.width === 0) { dismissSpotlight(); return; }
+      var cx2 = r2.left + r2.width / 2;
+      var cy2 = r2.top + r2.height / 2;
+      var hr2 = Math.max(r2.width, r2.height) / 2 + 14;
+      var mv2 = 'radial-gradient(circle ' + hr2 + 'px at ' + cx2 + 'px ' + cy2 + 'px, transparent ' + hr2 + 'px, black ' + (hr2 + 8) + 'px)';
+      spotlightOverlay.style.maskImage = mv2;
+      spotlightOverlay.style.webkitMaskImage = mv2;
+      var as2 = hr2 * 2 + 20;
+      aurora.style.width = as2 + 'px';
+      aurora.style.height = as2 + 'px';
+      aurora.style.left = (cx2 - as2 / 2) + 'px';
+      aurora.style.top = (cy2 - as2 / 2) + 'px';
+      var pl2 = r2.right + 18;
+      if (pl2 + 130 > window.innerWidth - 24) {
+        pillWrap.style.left = cx2 + 'px';
+        pillWrap.style.top = (r2.top - 50) + 'px';
+        pillWrap.style.transform = 'translateX(-50%)';
+      } else {
+        pillWrap.style.left = pl2 + 'px';
+        pillWrap.style.top = cy2 + 'px';
+        pillWrap.style.transform = 'translateY(-50%)';
+      }
+    };
+    window.addEventListener('resize', resizeHandler);
+    spotlightOverlay._resizeHandler = resizeHandler;
+  }
+
+  function dismissSpotlight() {
+    sessionStorage.setItem('mma-spotlight-dismissed', '1');
+    if (spotlightOverlay) {
+      if (spotlightOverlay._resizeHandler) {
+        window.removeEventListener('resize', spotlightOverlay._resizeHandler);
+      }
+      spotlightOverlay.style.opacity = '0';
+      spotlightOverlay.style.transition = 'opacity .25s ease';
+      var el = spotlightOverlay;
+      spotlightOverlay = null;
+      setTimeout(function() { el.remove(); }, 250);
+    }
+  }
+
+  // Trigger: after welcome dismiss
+  var welcomeEl = document.getElementById('mma-welcome');
+  if (welcomeEl) {
+    var observer = new MutationObserver(function() {
+      if (welcomeEl.style.display === 'none') {
+        observer.disconnect();
+        setTimeout(function() {
+          fetch('/api/auth/me').then(function(r) { return r.json(); }).then(function(data) {
+            if (!data.logged_in) buildSpotlight();
+          }).catch(function() {});
+        }, 800);
+      }
+    });
+    observer.observe(welcomeEl, { attributes: true, attributeFilter: ['style'] });
+  }
+
+  // Fallback: page reload with welcome already hidden
+  setTimeout(function() {
+    if (currentUser) return;
+    if (!loginLink || loginLink.hidden) return;
+    if (!welcomeEl || welcomeEl.style.display === 'none') {
+      fetch('/api/auth/me').then(function(r) { return r.json(); }).then(function(data) {
+        if (!data.logged_in && loginLink && !loginLink.hidden) buildSpotlight();
+      }).catch(function() {});
+    }
+  }, 2000);
+
   // Expose to global
   window.openLoginModal = openLoginModal;
   window.showLoginGuidance = showGuidance;
+  window.showSpotlight = buildSpotlight;
+  window.dismissSpotlight = dismissSpotlight;
 })();
 </script>
 <script src="/static/js/lib.js"></script>

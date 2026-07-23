@@ -2,29 +2,19 @@
 // Collapse/expand, drag+reset, per-role chat histories
 (function() {
   const ROLE_CONFIG = {
-    generator: { name: '建模手', persona: 'architect' },
-    paper: { name: '写作手', persona: 'writer' },
-    models: { name: '建模手', persona: 'architect' },
-    problems: { name: '建模手', persona: 'architect' },
-    guide: { name: '教练', persona: 'coach' },
-    roles: { name: '教练', persona: 'coach' },
+    generator: { name: '建模手', persona: 'architect', cssClass: 'avatar-architect' },
+    paper: { name: '写作手', persona: 'writer', cssClass: 'avatar-writer' },
+    models: { name: '建模手', persona: 'architect', cssClass: 'avatar-architect' },
+    problems: { name: '建模手', persona: 'architect', cssClass: 'avatar-architect' },
+    guide: { name: '教练', persona: 'coach', cssClass: 'avatar-coach' },
+    roles: { name: '教练', persona: 'coach', cssClass: 'avatar-coach' },
   };
 
-  var _avatarId = 0;
-  function getRoleAvatar(persona) {
-    var colors = {
-      architect: { start: '#4f8cf7', end: '#2563eb', symbol: '<circle cx="16" cy="16" r="16"/><line x1="16" y1="4" x2="16" y2="28" stroke="#fff" stroke-width="2.5"/><line x1="4" y1="16" x2="28" y2="16" stroke="#fff" stroke-width="2.5"/><circle cx="16" cy="16" r="3" fill="#fff"/>' },
-      writer: { start: '#a78bfa', end: '#7c3aed', symbol: '<circle cx="16" cy="16" r="16"/><path d="M10 26 L10 8 L18 6 L22 10 L22 26" fill="none" stroke="#fff" stroke-width="2.2" stroke-linejoin="round"/><line x1="14" y1="18" x2="20" y2="18" stroke="#fff" stroke-width="1.8"/><line x1="14" y1="21" x2="18" y2="21" stroke="#fff" stroke-width="1.8"/>' },
-      coach: { start: '#fbbf24', end: '#d97706', symbol: '<circle cx="16" cy="16" r="16"/><polygon points="16,4 19,13 28,13 21,19 24,28 16,23 8,28 11,19 4,13 13,13" fill="#fff"/>' },
-    };
-    var c = colors[persona] || colors.architect;
-    var gid = 'av-grad-' + persona + '-' + (++_avatarId);
-    return '<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" style="flex-shrink:0">' +
-      '<defs><linearGradient id="' + gid + '" x1="0" y1="0" x2="1" y2="1">' +
-      '<stop offset="0%" stop-color="' + c.start + '"/><stop offset="100%" stop-color="' + c.end + '"/>' +
-      '</linearGradient></defs>' +
-      '<g fill="url(#' + gid + ')">' + c.symbol + '</g>' +
-      '</svg>';
+  function getRoleAvatarHtml(persona) {
+    var cssClass = 'avatar-architect';
+    if (persona === 'writer') cssClass = 'avatar-writer';
+    else if (persona === 'coach') cssClass = 'avatar-coach';
+    return '<div class="teammate-avatar-icon ' + cssClass + '"></div>';
   }
 
   const WELCOME_SHOWN_KEY = 'mma-teammate-welcome';
@@ -57,9 +47,15 @@
   let resizing = false, resizeStartX = 0, resizeStartY = 0, panelStartW = 0, panelStartH = 0;
 
   // ---- Rate limiting ----
-  const HINT_COOLDOWN_MS = 30000;
+  const HINT_COOLDOWN_MS = 60000;
   let lastHintTime = 0;
   let lastHintFingerprint = '';
+
+  function maybeAutoHint(context) {
+    var now = Date.now();
+    if (now - lastHintTime < HINT_COOLDOWN_MS) return;
+    fetchHint(context);
+  }
 
   // ---- Typing indicator ----
   let typingEl = null;
@@ -139,9 +135,9 @@
     if (role === 'teammate') {
       try {
         var rendered = typeof marked !== 'undefined' ? marked.parse(text) : text;
-        el.innerHTML = '<div class="msg-avatar-row">' + getRoleAvatar(config.persona) + '<div class="msg-text">' + rendered + '</div></div>';
+        el.innerHTML = '<div class="msg-avatar-row">' + getRoleAvatarHtml(config.persona) + '<div class="msg-text">' + rendered + '</div></div>';
       } catch(e) {
-        el.innerHTML = '<div class="msg-avatar-row">' + getRoleAvatar(config.persona) + '<div class="msg-text">' + text + '</div></div>';
+        el.innerHTML = '<div class="msg-avatar-row">' + getRoleAvatarHtml(config.persona) + '<div class="msg-text">' + text + '</div></div>';
       }
     } else {
       el.innerHTML = '<div class="msg-text">' + text + '</div>';
@@ -181,7 +177,7 @@
     typingEl = document.createElement('div');
     typingEl.className = 'teammate-message role-teammate typing-indicator';
     var config = ROLE_CONFIG[currentRole] || ROLE_CONFIG.generator;
-    typingEl.innerHTML = '<div class="msg-avatar-row">' + getRoleAvatar(config.persona) + '<div class="typing-dots"><span></span><span></span><span></span></div></div>';
+    typingEl.innerHTML = '<div class="msg-avatar-row">' + getRoleAvatarHtml(config.persona) + '<div class="typing-dots"><span></span><span></span><span></span></div></div>';
     messagesEl.appendChild(typingEl);
     messagesEl.scrollTo({ top: messagesEl.scrollHeight, behavior: 'smooth' });
   }
@@ -249,7 +245,7 @@
   function updateCollapseBar() {
     if (!collapseBar) return;
     var config = ROLE_CONFIG[currentRole] || ROLE_CONFIG.generator;
-    collapseBar.innerHTML = getRoleAvatar(config.persona) +
+    collapseBar.innerHTML = getRoleAvatarHtml(config.persona) +
       '<span style="font-size:12px;font-weight:600;margin-left:8px;">' + config.name + '</span>' +
       '<span style="flex:1"></span>' +
       '<button class="teammate-expand-btn" title="展开" style="background:none;border:none;cursor:pointer;font-size:16px;color:var(--text-secondary);padding:4px;">+</button>';
@@ -328,13 +324,12 @@
     if (dragBar) dragBar.style.cursor = 'grab';
   }
 
-  // ---- Resize handle (rAF-throttled, handlers attached only while resizing) ----
+  // ---- Resize handle (vertical-only, rAF-throttled) ----
   function initResize() {
     if (isMobile) return;
     var handle = document.createElement('div');
     handle.className = 'teammate-resize-handle';
-    handle.title = '拖拽调整大小';
-    handle.innerHTML = '↘';
+    handle.title = '拖拽调整高度';
     panel.appendChild(handle);
     handle.addEventListener('mousedown', onResizeStart);
     handle.addEventListener('touchstart', onResizeStart, { passive: false });
@@ -342,11 +337,8 @@
 
   function onResizeStart(e) {
     resizing = true;
-    var clientX = e.touches ? e.touches[0].clientX : e.clientX;
     var clientY = e.touches ? e.touches[0].clientY : e.clientY;
-    resizeStartX = clientX;
     resizeStartY = clientY;
-    panelStartW = panel.offsetWidth;
     panelStartH = panel.offsetHeight;
     panel.style.transition = 'none';
     document.addEventListener('mousemove', onResizeMove);
@@ -361,15 +353,11 @@
   function onResizeMove(e) {
     if (!resizing) return;
     if (_resizeRaf) return;
-    var clientX = e.touches ? e.touches[0].clientX : e.clientX;
     var clientY = e.touches ? e.touches[0].clientY : e.clientY;
-    var dw = clientX - resizeStartX;
-    var dh = clientY - resizeStartY;
+    var dh = resizeStartY - clientY; // drag up = taller
     _resizeRaf = requestAnimationFrame(function() {
       _resizeRaf = null;
-      var newW = Math.max(280, Math.min(600, panelStartW + dw));
-      var newH = Math.max(300, Math.min(window.innerHeight * 0.8, panelStartH + dh));
-      panel.style.width = newW + 'px';
+      var newH = Math.max(300, Math.min(window.innerHeight * 0.85, panelStartH + dh));
       panel.style.height = newH + 'px';
       panel.style.maxHeight = 'none';
     });
@@ -543,7 +531,12 @@
     // Switch role
     var config = ROLE_CONFIG[tabName] || ROLE_CONFIG.generator;
     currentRole = tabName;
-    if (btn) btn.querySelector('.teammate-avatar').innerHTML = getRoleAvatar(config.persona);
+    if (btn) {
+      var avatarEl = btn.querySelector('.teammate-avatar-icon');
+      if (avatarEl) {
+        avatarEl.className = 'teammate-avatar-icon ' + config.cssClass;
+      }
+    }
     updateCollapseBar();
     // Restore messages for new role if panel is open
     if (panelState === 'open') {
@@ -552,8 +545,9 @@
 
     var problemType = document.getElementById('problem-type')?.value || '';
     var problemText = document.getElementById('problem')?.value || '';
-    if (tabName === 'models' || tabName === 'paper' || tabName === 'generator') {
-      fetchHint({ tab: tabName, problem_type: problemType, problem_text: problemText, last_action: 'tab_switch', idle_seconds: 0 });
+    // Only hint on tab switch when there's real content and the target tab can use it
+    if (problemText.length > 20 && tabName !== 'generator') {
+      maybeAutoHint({ tab: tabName, problem_type: problemType, problem_text: problemText, last_action: 'tab_switch', idle_seconds: 0 });
     }
   }
 
@@ -636,11 +630,14 @@
 
   // ---- Hook into generation lifecycle (event-driven, no MutationObserver) ----
   window._teammateOnGenerationComplete = function(tab) {
-    fetchHint({
+    var problemText = document.getElementById('problem')?.value || '';
+    // Don't hint if problem was cleared during generation
+    if (problemText.length < 10) return;
+    maybeAutoHint({
       tab: tab || 'generator',
       last_action: 'generation_complete',
       problem_type: document.getElementById('problem-type')?.value || '',
-      problem_text: document.getElementById('problem')?.value || '',
+      problem_text: problemText,
       idle_seconds: 0,
     });
   };
