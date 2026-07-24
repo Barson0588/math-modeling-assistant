@@ -8,6 +8,137 @@ function getApiKey() {
   catch { return ''; }
 }
 
+// ── Background Task Polling ──────────────────────────────────────────
+// Heavy operations run server-side so they survive page close.
+// Progress is polled every 2s and persisted in sessionStorage.
+
+var _runningTasks = {};       // { toolId: { progress: 0-100, stage: '...', taskId: '...' } }
+var _taskPollTimer = null;
+
+function _startTaskPolling(toolId, taskId, onDone, onError, onProgress) {
+  _runningTasks[toolId] = { progress: 0, stage: '准备中...', taskId: taskId, _ts: Date.now() };
+  try { sessionStorage.setItem('mma-tasks', JSON.stringify(_runningTasks)); } catch(e) {}
+
+  if (_taskPollTimer) clearInterval(_taskPollTimer);
+  _taskPollTimer = setInterval(function() {
+    var activeTasks = Object.keys(_runningTasks).filter(function(k) { return _runningTasks[k].progress < 100; });
+    if (activeTasks.length === 0) { clearInterval(_taskPollTimer); _taskPollTimer = null; return; }
+    activeTasks.forEach(function(tid) {
+      var t = _runningTasks[tid];
+      if (!t || !t.taskId) return;
+      fetch('/api/tasks/' + t.taskId)
+        .then(function(r) { return r.json(); })
+        .then(function(info) {
+          if (!info || info.error) return;
+          t.progress = info.progress || 0;
+          t.stage = info.stage || '';
+          try { sessionStorage.setItem('mma-tasks', JSON.stringify(_runningTasks)); } catch(e) {}
+          _updateToolProgressUI(tid);
+          if (onProgress) onProgress(info);
+          if (info.status === 'done') {
+            t.progress = 100;
+            t.stage = '完成';
+            _updateToolProgressUI(tid);
+            try { sessionStorage.removeItem('mma-tasks'); } catch(e) {}
+            if (onDone) onDone(info.result);
+          } else if (info.status === 'error') {
+            t.progress = -1;
+            t.stage = info.error || '失败';
+            _updateToolProgressUI(tid);
+            try { sessionStorage.removeItem('mma-tasks'); } catch(e) {}
+            if (onError) onError(info.error);
+          }
+        }).catch(function() {});
+    });
+  }, 3000);
+}
+
+function _updateToolProgressUI(toolId) {
+  var t = _runningTasks[toolId];
+  var btn = document.querySelector('[data-tool-id="' + toolId + '"]');
+  if (!btn) {
+    btn = document.getElementById(toolId);
+  }
+  if (!btn) return;
+  if (t && t.progress >= 0 && t.progress < 100) {
+    btn.dataset.progress = t.progress;
+    btn.dataset.stage = t.stage || '';
+    btn.classList.add('tool-running');
+  } else {
+    delete btn.dataset.progress;
+    delete btn.dataset.stage;
+    btn.classList.remove('tool-running');
+  }
+}
+
+// Resume polling for unfinished tasks on page load
+(function() {
+  try {
+    var saved = sessionStorage.getItem('mma-tasks');
+    if (saved) {
+      var tasks = JSON.parse(saved);
+      Object.keys(tasks).forEach(function(tid) {
+        var t = tasks[tid];
+        if (t && t.progress < 100 && t.taskId) {
+          _runningTasks[tid] = t;
+          _updateToolProgressUI(tid);
+        }
+      });
+      // Resume polling (skip if no active tasks after filtering)
+      var activeTaskIds = Object.keys(_runningTasks);
+      if (activeTaskIds.length === 0) { try { sessionStorage.removeItem('mma-tasks'); } catch(e) {} return; }
+      // Verify tasks still exist on server before polling
+      var checkPromises = activeTaskIds.map(function(tid) {
+        return fetch('/api/tasks/' + _runningTasks[tid].taskId).then(function(r) { return r.json(); }).then(function(info) {
+          if (info && info.error) { delete _runningTasks[tid]; _updateToolProgressUI(tid); }
+        }).catch(function() { delete _runningTasks[tid]; });
+      });
+      Promise.all(checkPromises).then(function() {
+        if (Object.keys(_runningTasks).length === 0) {
+          try { sessionStorage.removeItem('mma-tasks'); } catch(e) {}
+          return;
+        }
+        _taskPollTimer = setInterval(function() {
+          var active = Object.keys(_runningTasks).filter(function(k) { return _runningTasks[k].progress < 100; });
+          if (active.length === 0) { clearInterval(_taskPollTimer); _taskPollTimer = null; return; }
+          active.forEach(function(tid) {
+            var t = _runningTasks[tid];
+            fetch('/api/tasks/' + t.taskId)
+              .then(function(r) { return r.json(); })
+              .then(function(info) {
+                if (!info || info.error) return;
+                t.progress = info.progress || 0;
+                t.stage = info.stage || '';
+                try { sessionStorage.setItem('mma-tasks', JSON.stringify(_runningTasks)); } catch(e) {}
+                _updateToolProgressUI(tid);
+                if (info.status === 'done' || info.status === 'error') {
+                  delete _runningTasks[tid];
+                  try { sessionStorage.removeItem('mma-tasks'); } catch(e) {}
+                  if (info.status === 'done' && tid === 'dedup-full' && info.result) {
+                    // Restore dedup result in sidebar
+                    var dedupResult = document.getElementById('dedup-result');
+                    if (dedupResult && info.result.content) {
+                      dedupResult.dataset.rewrittenContent = info.result.content;
+                      dedupResult.innerHTML = '<h3>全文降重结果（AST 无损）</h3><div class="dedup-actions"><button class="btn-sm" onclick="copyDedupResult(this)">复制改写内容</button><button class="btn-sm" onclick="replaceWithDedup(this)">替换原文</button></div>' + marked.parse(info.result.content);
+                    }
+                  }
+                  if (info.status === 'done' && tid === 'plagiarism-check' && info.result) {
+                    var tabId = _sidebarActiveTabId;
+                    if (tabId) {
+                      var dedupHtml = '<div class="dedup-action-bar"><button class="btn-sm dedup-btn" id="dedup-full-btn" onclick="runDedup(\'full\')">全文降重改写</button><button class="btn-sm dedup-btn" id="dedup-flagged-btn" onclick="runDedup(\'flagged\')">仅改写高风险段落</button><span class="dedup-hint">AI 去重 — 保留公式、数据，仅重述语言</span></div><div class="dedup-result" id="dedup-result" hidden></div>';
+                      updateSidebarContent('<div class="plagiarism-report-wrapper">' + dedupHtml + '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">AI 辅助查重，结果仅供参考</div>' + marked.parse(info.result.content) + '</div>', tabId);
+                    }
+                  }
+                  _updateToolProgressUI(tid);
+                }
+              }).catch(function() {});
+          });
+        }, 3000);
+      }); // close Promise.all verify-before-poll
+    }
+  } catch(e) {}
+})();
+
 function setApiKey(key) {
   try { localStorage.setItem(API_KEY_STORAGE, key); }
   catch {}
@@ -295,6 +426,19 @@ document.querySelectorAll('.nav-btn').forEach(btn => {
   });
 });
 
+// ── Eager preload of Guide & Roles data for instant tab switch ──
+var _guideData = null;
+var _rolesContent = null;
+
+setTimeout(function() {
+  fetch('/api/guide').then(function(r) { return r.json(); }).then(function(d) {
+    _guideData = d;
+  }).catch(function() {});
+  fetch('/api/roles').then(function(r) { return r.json(); }).then(function(d) {
+    _rolesContent = d.content;
+  }).catch(function() {});
+}, 600);
+
 // Bottom nav tab switching
 document.querySelectorAll('.bottom-nav-btn').forEach(btn => {
   btn.addEventListener('click', () => {
@@ -326,10 +470,15 @@ function showToast(msg) {
 // ============================================================
 async function loadRoles() {
   const container = document.getElementById('roles-content');
+  if (_rolesContent) {
+    container.innerHTML = marked.parse(_rolesContent);
+    return;
+  }
   container.innerHTML = '<p class="empty-state"><span class="spinner spinner-dark"></span>加载中...</p>';
   try {
     const res = await fetch('/api/roles');
     const data = await res.json();
+    _rolesContent = data.content;
     container.innerHTML = marked.parse(data.content);
   } catch (e) {
     container.innerHTML = '<p class="error-msg">加载失败 <button class="btn-sm" onclick="loadedTabs.roles=false;loadRoles()">重试</button></p>';
@@ -658,19 +807,28 @@ function useProblem(contest, type, category, description, requirements) {
 let _paperAnalysisSetup = false;
 
 async function loadGuide() {
+  if (_guideData) {
+    renderGuideContent(_guideData);
+    return;
+  }
   try {
     const res = await fetch('/api/guide');
     const data = await res.json();
-    injectCountdown();
-    renderTimeline(data.timeline);
-    renderTools(data.tools);
-    renderCodeStandards(data.code_standards);
-    if (data.submission_checklist) renderSubmissionChecklist(data.submission_checklist);
-    if (data.viz_templates) renderVizTemplates(data.viz_templates);
-    setupPaperAnalysis();
+    _guideData = data;
+    renderGuideContent(data);
   } catch (e) {
     document.getElementById('timeline-container').innerHTML = '<p class="error-msg">加载失败 <button class="btn-sm" onclick="loadedTabs.guide=false;loadGuide()">重试</button></p>';
   }
+}
+
+function renderGuideContent(data) {
+  injectCountdown();
+  renderTimeline(data.timeline);
+  renderTools(data.tools);
+  renderCodeStandards(data.code_standards);
+  if (data.submission_checklist) renderSubmissionChecklist(data.submission_checklist);
+  if (data.viz_templates) renderVizTemplates(data.viz_templates);
+  setupPaperAnalysis();
 }
 
 function setupPaperAnalysis() {
@@ -1061,21 +1219,55 @@ aiReportBtn.addEventListener('click', async () => {
   resultDiv.scrollIntoView({ behavior: 'smooth' });
 
   try {
-    const res = await fetch('/api/ai-report', {
+    var res = await fetch('/api/ai-report/stream', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ problem }),
     });
-    const data = await res.json();
-    if (data.error) {
-      resultContent.innerHTML = `<p class="error-msg">${escapeHtml(data.error)}</p>`;
-    } else {
-      resultContent.innerHTML = marked.parse(data.content);
-      injectCodeCopyButtons(resultContent);
-      buildTOC(resultContent);
+    if (!res.ok) {
+      var errData = await res.json().catch(function() { return {}; });
+      throw new Error(errData.error || 'HTTP ' + res.status);
     }
+    var reader = res.body.getReader();
+    var decoder = new TextDecoder();
+    var buffer = '';
+    var fullContent = '';
+    var msgLines = [];
+    var updateTimer = 0;
+
+    while (true) {
+      var readResult = await reader.read();
+      if (readResult.done) break;
+      buffer += decoder.decode(readResult.value, { stream: true });
+      var lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+      for (var li = 0; li < lines.length; li++) {
+        var line = lines[li];
+        if (line === '' || line === '\r') {
+          if (msgLines.length > 0) {
+            var data = msgLines.join('\n');
+            msgLines = [];
+            if (data === '[DONE]') continue;
+            if (data.indexOf('[ERROR]') === 0) throw new Error(data.slice(8));
+            if (data.indexOf('[STAGE:') === 0) continue;
+            fullContent += data;
+            var now = Date.now();
+            if (now - updateTimer > 200) {
+              updateTimer = now;
+              resultContent.innerHTML = marked.parse(fullContent) + '<span class="streaming-cursor-el"></span>';
+            }
+            resultContent.scrollTop = resultContent.scrollHeight;
+          }
+        } else if (line.indexOf('data: ') === 0) {
+          msgLines.push(line.slice(6));
+        }
+      }
+    }
+    resultContent.innerHTML = marked.parse(fullContent);
+    injectCodeCopyButtons(resultContent);
+    buildTOC(resultContent);
   } catch (e) {
-    resultContent.innerHTML = '<p class="error-msg">网络错误，请检查服务器是否运行 <button class="btn-sm" onclick="aiReportBtn.click()">重试</button></p>';
+    if (e.name !== 'AbortError') resultContent.innerHTML = '<p class="error-msg">网络错误，请检查服务器是否运行 <button class="btn-sm" onclick="aiReportBtn.click()">重试</button></p>';
   } finally {
     setButtonsLoading(aiReportBtn, false);
     generateBtn.disabled = false;
@@ -2462,24 +2654,53 @@ function showExplainPanel(title, content) {
   `;
   document.body.appendChild(panel);
 
-  // Fetch explanation
-  fetch('/api/explain', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ section_title: title, section_content: content }),
-  })
-  .then(res => res.json())
-  .then(data => {
-    const body = panel.querySelector('.explain-panel-body');
-    if (data.error) {
-      body.innerHTML = `<p class="error-msg">${escapeHtml(data.error)}</p>`;
-    } else {
-      body.innerHTML = marked.parse(data.content);
+  // Fetch explanation with streaming
+  (async function() {
+    try {
+      var res = await fetch('/api/explain/stream', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ section_title: title, section_content: content }),
+      });
+      if (!res.ok) {
+        var errData = await res.json().catch(function() { return {}; });
+        throw new Error(errData.error || 'HTTP ' + res.status);
+      }
+      var reader = res.body.getReader();
+      var decoder = new TextDecoder();
+      var buffer = '';
+      var fullResult = '';
+      var msgLines = [];
+      var bodyEl = panel.querySelector('.explain-panel-body');
+
+      while (true) {
+        var readResult = await reader.read();
+        if (readResult.done) break;
+        buffer += decoder.decode(readResult.value, { stream: true });
+        var lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+        for (var li = 0; li < lines.length; li++) {
+          var line = lines[li];
+          if (line === '' || line === '\r') {
+            if (msgLines.length > 0) {
+              var data = msgLines.join('\n');
+              msgLines = [];
+              if (data === '[DONE]') continue;
+              if (data.indexOf('[ERROR]') === 0) throw new Error(data.slice(8));
+              if (data.indexOf('[STAGE:') === 0) continue;
+              fullResult += data;
+              bodyEl.innerHTML = marked.parse(fullResult) + '<span class="streaming-cursor-el"></span>';
+            }
+          } else if (line.indexOf('data: ') === 0) {
+            msgLines.push(line.slice(6));
+          }
+        }
+      }
+      bodyEl.innerHTML = marked.parse(fullResult);
+    } catch (e) {
+      panel.querySelector('.explain-panel-body').innerHTML = '<p class="error-msg">' + escapeHtml((e.message || '网络错误，请重试').slice(0, 200)) + '</p>';
     }
-  })
-  .catch(() => {
-    panel.querySelector('.explain-panel-body').innerHTML = '<p class="error-msg">网络错误，请重试</p>';
-  });
+  })();
 
   // Close on Escape
   const escHandler = e => { if (e.key === 'Escape') { panel.remove(); document.removeEventListener('keydown', escHandler); } };
@@ -2780,8 +3001,7 @@ function injectQuickActions() {
   // Build drawer-group tool categories
   var groups = [
     { label: '质量检查', icon: '&#128269;', items: [
-      { id: 'qa-plagiarism-btn', cls: 'plagiarism-action', text: 'AI 查重', tip: 'AI 分析论文原创性，检测模板化内容和潜在雷同', handler: 'runPlagiarismCheck' },
-      { id: 'qa-verify-refs-btn', cls: 'verify-refs-action', text: '验证引用', tip: '交叉验证参考文献是否真实存在', handler: 'runReferenceCheck' },
+      { id: 'qa-rag-check-btn', cls: 'rag-check-action', text: 'RAG 原创性检验', tip: '一站式原创性分析：AI 查重 + 引用验证 + RAG 修正，完成后可预览 Diff 再应用', handler: 'runRagOriginalityCheck' },
       { id: 'qa-verify-math-btn', cls: 'verify-math-action', text: '验证推导', tip: '独立复核数学推导的正确性', handler: 'runMathCheck' },
       { id: 'qa-score-btn', cls: 'score-action', text: '论文评分', tip: '按 COMAP 评审标准打分', handler: 'runPaperScore' },
       { id: 'qa-review-btn', cls: 'review-action', text: '模拟评审', tip: 'AI 扮演 COMAP 评委，按官方评分标准逐项打分', handler: 'runMockReview' },
@@ -2804,6 +3024,7 @@ function injectQuickActions() {
 
   // Map of handler names → functions
   var handlerMap = {
+    runRagOriginalityCheck: runRagOriginalityCheck,
     runPlagiarismCheck: runPlagiarismCheck,
     runReferenceCheck: runReferenceCheck,
     runMathCheck: runMathCheck,
@@ -2834,6 +3055,7 @@ function injectQuickActions() {
       var itemBtn = document.createElement('button');
       itemBtn.className = 'quick-action-btn ' + item.cls;
       itemBtn.id = item.id;
+      itemBtn.dataset.toolId = item.id;
       itemBtn.title = item.tip;
       itemBtn.textContent = item.text;
       itemBtn.addEventListener('click', function(e) {
@@ -3343,8 +3565,390 @@ function getActiveContent() {
 }
 
 // Loop check state
+// ── Shared streaming helper ──
+// Handles SSE ReadableStream parsing for all tool endpoints.
+// Calls renderFn(resultText, tabId) progressively as chunks arrive.
+// Calls stageHandler(stageName) or updateSidebarProgress on [STAGE:] events.
+async function _streamToolResponse(url, body, tabId, renderFn, stageHandler) {
+  var res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    signal: _sidebarAbortController?.signal,
+  });
+  if (!res.ok) {
+    var errData = await res.json().catch(function() { return {}; });
+    throw new Error(errData.error || 'HTTP ' + res.status);
+  }
+  var reader = res.body.getReader();
+  var decoder = new TextDecoder();
+  var buffer = '';
+  var fullResult = '';
+  var msgLines = [];
+
+  while (true) {
+    var readResult = await reader.read();
+    if (readResult.done) break;
+    buffer += decoder.decode(readResult.value, { stream: true });
+    var lines = buffer.split('\n');
+    buffer = lines.pop() || '';
+    for (var li = 0; li < lines.length; li++) {
+      var line = lines[li];
+      if (line === '' || line === '\r') {
+        if (msgLines.length > 0) {
+          var data = msgLines.join('\n');
+          msgLines = [];
+          if (data === '[DONE]') continue;
+          if (data.indexOf('[ERROR]') === 0) throw new Error(data.slice(8));
+          if (data.indexOf('[STAGE:') === 0) {
+            (stageHandler || updateSidebarProgress)(data.slice(7, -1));
+            continue;
+          }
+          fullResult += data;
+          if (renderFn) renderFn(fullResult, tabId);
+        }
+      } else if (line.indexOf('data: ') === 0) {
+        msgLines.push(line.slice(6));
+      }
+    }
+  }
+  return fullResult;
+}
+
 var _plagLoopCount = 0;
 var _plagLoopMax = 3;
+
+// ── Unified RAG Originality Check ──────────────────────────────────────
+// Merges plagiarism analysis + citation grounding into one task.
+// Shows GitHub-style diff preview — user must explicitly click "Apply".
+
+async function runRagOriginalityCheck() {
+  // Merge the two existing tools: plagiarism check → citation grounding.
+  // Reuses the same /api/check-plagiarism/stream and /api/ground-citations
+  // endpoints as the standalone tools — just chains them in one tab.
+
+  const resultContent = getActiveContent();
+  const text = resultContent ? resultContent.innerText : '';
+  if (!text.trim()) { showToast('没有可分析的内容'); return; }
+
+  var _tabId = showSidebar('RAG 原创性检验', [
+    '正在提取文本片段...',
+    '正在比对分析...',
+    '正在生成查重报告...',
+  ], 'rag-check');
+  setActionLoading('qa-rag-check-btn', true);
+  updateSidebarProgress('正在连接 AI 分析引擎...');
+
+  var plagiarismDone = false;
+  var plagiarismFull = '';
+  var citationDone = false;
+  var citationData = null;
+
+  function _renderCombined() {
+    var html = '';
+
+    // Plagiarism section
+    if (plagiarismDone && plagiarismFull) {
+      html += '<div class="rag-section">' +
+        '<h3 class="rag-section-title"><span class="rag-section-icon">&#128269;</span> 原创性分析报告</h3>' +
+        '<div class="rag-plagiarism-content">' + marked.parse(plagiarismFull) + '</div>' +
+        '<div class="dedup-action-bar" style="margin-top:16px">' +
+          '<button class="btn-sm dedup-btn" id="dedup-full-btn" onclick="runDedup(\'full\')">全文降重改写</button>' +
+          '<button class="btn-sm dedup-btn" id="dedup-flagged-btn" onclick="runDedup(\'flagged\')">仅改写高风险段落</button>' +
+          '<span class="dedup-hint">AI 去重 — 保留公式、数据，仅重述语言</span>' +
+        '</div>' +
+        '<div class="dedup-result" id="dedup-result" hidden></div>' +
+        '</div>';
+    } else if (plagiarismFull) {
+      html += '<div class="rag-section">' +
+        '<h3 class="rag-section-title"><span class="rag-section-icon">&#128269;</span> 原创性分析报告 <span class="streaming-cursor-el"></span></h3>' +
+        '<div class="rag-plagiarism-content">' + marked.parse(plagiarismFull) + '</div>' +
+        '</div>';
+    }
+
+    // Citation section
+    if (citationDone && citationData) {
+      html += _buildCitationGroundingHtml(citationData);
+    } else if (plagiarismDone) {
+      html += '<div class="rag-section">' +
+        '<h3 class="rag-section-title"><span class="rag-section-icon">&#128220;</span> 引用验证与修正</h3>' +
+        '<div class="rag-loading-indicator"><span class="rag-spinner"></span> 正在检索验证引用...</div>' +
+        '</div>';
+    }
+
+    updateSidebarContent(html, _tabId);
+  }
+
+  try {
+    // ── Step 1: Plagiarism check (streaming) — same endpoint as runPlagiarismCheck ──
+    var plagRes = await fetch('/api/check-plagiarism/stream', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: text }),
+      signal: _sidebarAbortController?.signal,
+    });
+
+    if (!plagRes.ok) {
+      var errData = await plagRes.json().catch(function() { return {}; });
+      throw new Error(errData.error || 'HTTP ' + plagRes.status);
+    }
+
+    var reader = plagRes.body.getReader();
+    var decoder = new TextDecoder();
+    var buffer = '';
+    var msgLines = [];
+
+    while (true) {
+      var readResult = await reader.read();
+      if (readResult.done) break;
+      buffer += decoder.decode(readResult.value, { stream: true });
+      var lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (var li = 0; li < lines.length; li++) {
+        var line = lines[li];
+        if (line === '' || line === '\r') {
+          if (msgLines.length > 0) {
+            var data = msgLines.join('\n');
+            msgLines = [];
+            if (data === '[DONE]') continue;
+            if (data.indexOf('[ERROR]') === 0) throw new Error(data.slice(8));
+            if (data.indexOf('[STAGE:') === 0) {
+              updateSidebarProgress(data.slice(7, -1));
+              continue;
+            }
+            plagiarismFull += data;
+            // Progressive render every ~300 chars
+            if (plagiarismFull.length % 900 < 300) _renderCombined();
+          }
+        } else if (line.indexOf('data: ') === 0) {
+          msgLines.push(line.slice(6));
+        }
+      }
+    }
+
+    plagiarismDone = true;
+    // Store early so dedup buttons can access content immediately
+    setTabMeta(_tabId, 'originalContent', text);
+    _renderCombined();
+
+    // ── Step 2: Citation grounding — same endpoint as runCitationGrounding ──
+    updateSidebarProgress('正在提取引用 → 搜索 Crossref/Semantic Scholar → AI 自主验证...');
+
+    var citRes = await fetch('/api/ground-citations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: text }),
+    });
+    var citResult = await citRes.json();
+
+    if (citResult.error) {
+      // Show plagiarism results even if citation fails
+      citationData = { error: citResult.error };
+    } else {
+      citationData = citResult;
+      // Store for apply button
+      setTabMeta(_tabId, 'originalContent', text);
+      setTabMeta(_tabId, 'groundedContent', citResult.content || '');
+      setTabMeta(_tabId, 'corrections', JSON.stringify(citResult.corrections || []));
+    }
+
+    citationDone = true;
+    _renderCombined();
+
+  } catch (e) {
+    if (e.name !== 'AbortError') {
+      if (plagiarismFull) {
+        // Show partial results
+        plagiarismDone = true;
+        citationDone = true;
+        citationData = { error: '引用验证被中断: ' + (e.message || '').slice(0, 150) };
+        _renderCombined();
+      } else {
+        updateSidebarContent('<p class="error-msg">RAG 原创性检验失败: ' + escapeHtml((e.message || '请检查网络连接').slice(0, 200)) + '</p>', _tabId);
+      }
+    }
+  } finally {
+    setActionLoading('qa-rag-check-btn', false);
+  }
+}
+
+// ── Build citation grounding HTML (shared between unified & standalone flows) ──
+
+function _buildCitationGroundingHtml(data) {
+  if (data.error) {
+    return '<div class="rag-section">' +
+      '<h3 class="rag-section-title"><span class="rag-section-icon">&#128220;</span> 引用验证与修正</h3>' +
+      '<p class="error-msg" style="font-size:13px">引用验证失败: ' + escapeHtml(data.error.slice(0, 200)) + '</p>' +
+      '</div>';
+  }
+
+  var html = '<div class="rag-section">' +
+    '<h3 class="rag-section-title"><span class="rag-section-icon">&#128220;</span> 引用验证与修正</h3>';
+
+  if (data.summary) {
+    html += '<div class="rag-summary">' + marked.parse(data.summary) + '</div>';
+  }
+
+  var corrections = data.corrections || [];
+  var totalRefs = data.total_refs || corrections.length;
+  var correctedCount = 0, realCount = 0, failedCount = 0;
+
+  corrections.forEach(function(c) {
+    if (c.is_corrected) correctedCount++;
+    else if (c.note && c.note.indexOf('Already real') !== -1) realCount++;
+    else failedCount++;
+  });
+
+  var total = corrections.length || totalRefs;
+
+  // Stats bar
+  html += '<div class="citation-stats-bar">' +
+    '<div class="citation-stat"><span class="citation-stat-num">' + total + '</span><span class="citation-stat-label">总计</span></div>' +
+    '<div class="citation-stat verified"><span class="citation-stat-num">' + realCount + '</span><span class="citation-stat-label">已验证</span></div>' +
+    '<div class="citation-stat corrected"><span class="citation-stat-num">' + correctedCount + '</span><span class="citation-stat-label">已修正</span></div>' +
+    (failedCount > 0 ? '<div class="citation-stat failed"><span class="citation-stat-num">' + failedCount + '</span><span class="citation-stat-label">未修复</span></div>' : '') +
+    '</div>';
+
+  var pctOk = total > 0 ? Math.round((realCount + correctedCount) / Math.max(total, 1) * 100) : 0;
+  html += '<div class="citation-progress-bar"><div class="citation-progress-fill" style="width:' + pctOk + '%"></div></div>';
+  html += '<p class="rag-pct-hint">' + pctOk + '% 引用可信</p>';
+
+  // GitHub-style diff
+  if (corrections.length > 0) {
+    html += '<div class="rag-diff-container">' +
+      '<div class="rag-diff-header">' +
+        '<span class="rag-diff-header-label">变更对比</span>' +
+        '<span class="rag-diff-header-count">' + correctedCount + ' 处修改</span>' +
+      '</div>';
+
+    corrections.forEach(function(c, i) {
+      var refLabel = escapeHtml(c.ref_id || ('#' + (i + 1)));
+      if (c.is_corrected) {
+        html += '<div class="rag-diff-block">' +
+          '<div class="rag-diff-block-header">' +
+            '<span class="rag-diff-ref-label">[' + refLabel + ']</span>' +
+            '<span class="rag-diff-badge corrected">已修正</span>' +
+          '</div>' +
+          '<div class="rag-diff-lines">' +
+            '<div class="rag-diff-line rag-diff-del">' +
+              '<span class="rag-diff-sign">-</span>' +
+              '<span class="rag-diff-text">' + escapeHtml(c.old_text || '') + '</span>' +
+            '</div>' +
+            '<div class="rag-diff-line rag-diff-add">' +
+              '<span class="rag-diff-sign">+</span>' +
+              '<span class="rag-diff-text">' + escapeHtml(c.new_text || '') + '</span>' +
+            '</div>' +
+          '</div>' +
+          (c.note ? '<div class="rag-diff-note">' + escapeHtml(c.note) + '</div>' : '') +
+          '</div>';
+      } else if (c.note && c.note.indexOf('Already real') !== -1) {
+        html += '<div class="rag-diff-block rag-diff-ok">' +
+          '<div class="rag-diff-block-header">' +
+            '<span class="rag-diff-ref-label">[' + refLabel + ']</span>' +
+            '<span class="rag-diff-badge real">真实存在</span>' +
+          '</div>' +
+          '<div class="rag-diff-lines">' +
+            '<div class="rag-diff-line rag-diff-keep">' +
+              '<span class="rag-diff-sign"> </span>' +
+              '<span class="rag-diff-text">' + escapeHtml(c.old_text || '') + '</span>' +
+            '</div>' +
+          '</div>' +
+          '</div>';
+      } else if (c.old_text) {
+        html += '<div class="rag-diff-block rag-diff-failed">' +
+          '<div class="rag-diff-block-header">' +
+            '<span class="rag-diff-ref-label">[' + refLabel + ']</span>' +
+            '<span class="rag-diff-badge failed">未能修正</span>' +
+          '</div>' +
+          '<div class="rag-diff-lines">' +
+            '<div class="rag-diff-line rag-diff-del">' +
+              '<span class="rag-diff-sign">-</span>' +
+              '<span class="rag-diff-text">' + escapeHtml(c.old_text).slice(0, 200) + '</span>' +
+            '</div>' +
+          '</div>' +
+          (c.note ? '<div class="rag-diff-note">' + escapeHtml(c.note) + '</div>' : '<div class="rag-diff-note">建议手动核查此引用</div>') +
+          '</div>';
+      }
+    });
+    html += '</div>';
+  }
+
+  html += '</div>'; // close rag-section
+
+  // Apply button (only if corrections exist)
+  if (correctedCount > 0) {
+    html += '<div class="rag-apply-bar">' +
+      '<div class="rag-apply-hint">' +
+        '<span class="rag-apply-icon">&#9888;</span> 以上修改尚未应用到原文。请仔细审查 Diff 后点击应用。' +
+      '</div>' +
+      '<button class="btn-ctn rag-apply-btn" id="rag-apply-btn" onclick="applyRagCorrections(this)">' +
+        '应用 ' + correctedCount + ' 处修正到原文（AST 无损替换）' +
+      '</button>' +
+      '</div>';
+  } else if (total === 0) {
+    html += '<div class="rag-apply-bar rag-apply-clean">' +
+      '<span style="color:var(--green);font-weight:600;">&#10003; 未发现需要修正的引用问题</span>' +
+      '</div>';
+  }
+
+  return html;
+}
+
+// ── Apply RAG Corrections (AST-safe) ──
+function applyRagCorrections(btn) {
+  if (btn && btn.disabled) return;
+  if (btn) { btn.disabled = true; btn.setAttribute('data-orig-text', btn.textContent); btn.textContent = '正在应用...'; }
+
+  var activeId = _sidebarActiveTabId;
+  var groundedContent = getTabMeta(activeId, 'groundedContent') || '';
+  var corrections = JSON.parse(getTabMeta(activeId, 'corrections') || '[]');
+  var correctedOnly = corrections.filter(function(c) { return c.is_corrected && c.old_text; });
+
+  if (!groundedContent.trim()) { showToast('没有可替换的内容'); if (btn) btn.disabled = false; return; }
+
+  var resultContent = getActiveContent();
+  if (!resultContent) { if (btn) btn.disabled = false; return; }
+
+  if (editModeActive) {
+    var textarea = document.getElementById('edit-textarea');
+    if (textarea) {
+      textarea.value = groundedContent;
+      showToast('已替换编辑区内容');
+    }
+    if (btn) { btn.disabled = false; btn.textContent = '应用修正到原文（AST 无损替换）'; }
+    return;
+  }
+
+  // Visual highlight animation then AST-safe DOM replacement
+  var diffBlocks = document.querySelectorAll('.rag-diff-block');
+  var correctedBlocks = [];
+  diffBlocks.forEach(function(block) {
+    if (!block.classList.contains('rag-diff-failed') && !block.classList.contains('rag-diff-ok')) {
+      correctedBlocks.push(block);
+    }
+  });
+
+  if (correctedBlocks.length > 0) {
+    var idx = 0;
+    function highlightNext() {
+      if (idx >= correctedBlocks.length) {
+        _swapGroundedContent(resultContent, groundedContent, btn, correctedBlocks.length);
+        return;
+      }
+      var block = correctedBlocks[idx];
+      block.style.transition = 'all .3s ease';
+      block.style.transform = 'scale(1.02)';
+      block.style.boxShadow = '0 0 0 3px var(--accent)';
+      block.style.borderRadius = '8px';
+      if (btn) btn.textContent = '应用修正中 (' + (idx + 1) + '/' + correctedBlocks.length + ')...';
+      idx++;
+      setTimeout(highlightNext, 500);
+    }
+    highlightNext();
+  } else {
+    _swapGroundedContent(resultContent, groundedContent, btn, 0);
+  }
+}
 
 async function runPlagiarismCheck(textOverride, loopIteration) {
   const btn = document.getElementById('qa-plagiarism-btn');
@@ -3354,39 +3958,104 @@ async function runPlagiarismCheck(textOverride, loopIteration) {
 
   if (!loopIteration) { _plagLoopCount = 0; }
   var title = loopIteration ? '原创性分析 (第' + loopIteration + '轮)' : '原创性分析';
+  if (loopIteration) {
+    // Re-check uses non-streaming for simplicity (iterative mode)
+    var _tabId2 = showSidebar(title, ['正在提取文本片段...', '正在比对分析...', '正在生成查重报告...'], 'plagiarism-check');
+    setActionLoading('qa-plagiarism-btn', true);
+    updateSidebarProgress('第' + loopIteration + '轮查重 — AI 深度分析中...');
+    try {
+      var body2 = JSON.stringify({ content: text, iteration: loopIteration || 1 });
+      const res2 = await fetch('/api/check-plagiarism', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: body2,
+        signal: _sidebarAbortController?.signal,
+      });
+      const data2 = await res2.json();
+      if (data2.error) {
+        updateSidebarContent('<p class="error-msg">' + escapeHtml(data2.error) + '</p>', _tabId2);
+      } else {
+        _renderPlagiarismResult(_tabId2, data2.content, text, loopIteration);
+      }
+    } catch (e) { if (e.name !== 'AbortError') updateSidebarContent('<p class="error-msg">查重分析失败: ' + escapeHtml((e.message || '请检查网络连接').slice(0, 200)) + '</p>', _tabId2); }
+    finally { setActionLoading('qa-plagiarism-btn', false); }
+    return;
+  }
+
+  // ── First check: use streaming for real-time feedback ──
   var _tabId = showSidebar(title, ['正在提取文本片段...', '正在比对分析...', '正在生成查重报告...'], 'plagiarism-check');
   setActionLoading('qa-plagiarism-btn', true);
-  updateSidebarProgress(loopIteration ? '第' + loopIteration + '轮查重 — AI 深度分析中...' : '正在提取文本片段...');
+  updateSidebarProgress('正在连接 AI 分析引擎...');
+
   try {
-    var body = JSON.stringify({ content: text, iteration: loopIteration || 1 });
-    const res = await fetch('/api/check-plagiarism', {
+    const res = await fetch('/api/check-plagiarism/stream', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: body,
+      body: JSON.stringify({ content: text }),
       signal: _sidebarAbortController?.signal,
     });
-    const data = await res.json();
-    if (data.error) {
-      updateSidebarContent(`<p class="error-msg">${escapeHtml(data.error)}</p>`, _tabId);
-    } else {
-      var dedupHtml = `
-        <div class="dedup-action-bar">
-          <button class="btn-sm dedup-btn" id="dedup-full-btn" onclick="runDedup('full')">全文降重改写</button>
-          <button class="btn-sm dedup-btn" id="dedup-flagged-btn" onclick="runDedup('flagged')">仅改写高风险段落</button>
-          <span class="dedup-hint">AI 去重 — 保留公式、数据，仅重述语言</span>
-        </div>
-        <div class="dedup-result" id="dedup-result" hidden></div>`;
-      var loopHtml = _plagLoopCount < _plagLoopMax - 1 ? `
-        <div class="loop-check-bar">
-          <span class="loop-hint">已检查 ${_plagLoopCount + 1}/${_plagLoopMax} 轮 — 循环检查可提高准确性</span>
-          <button class="btn-sm loop-btn" onclick="runPlagiarismCheck(null, ${_plagLoopCount + 2})">重新检查 (第${_plagLoopCount + 2}轮)</button>
-        </div>` : '<div class="loop-check-bar"><span class="loop-hint" style="color:var(--green)">已完成 ' + _plagLoopMax + ' 轮深度检查</span></div>';
-      updateSidebarContent(`<div class="plagiarism-report-wrapper">${dedupHtml}${loopHtml}<div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">AI 辅助查重，结果仅供参考</div>${marked.parse(data.content)}</div>`, _tabId);
-      setTabMeta(_tabId, 'originalContent', text);
-      setTabMeta(_tabId, 'plagiarismReport', data.content);
-      _plagLoopCount = loopIteration ? loopIteration : 1;
+
+    if (!res.ok) {
+      const errData = await res.json().catch(function() { return {}; });
+      throw new Error(errData.error || 'HTTP ' + res.status);
     }
+
+    var reader = res.body.getReader();
+    var decoder = new TextDecoder();
+    var buffer = '';
+    var fullResult = '';
+    var msgLines = [];
+
+    while (true) {
+      var readResult = await reader.read();
+      if (readResult.done) break;
+
+      buffer += decoder.decode(readResult.value, { stream: true });
+      var lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (var li = 0; li < lines.length; li++) {
+        var line = lines[li];
+        if (line === '' || line === '\r') {
+          if (msgLines.length > 0) {
+            var data = msgLines.join('\n');
+            msgLines = [];
+            if (data === '[DONE]') continue;
+            if (data.indexOf('[ERROR]') === 0) {
+              throw new Error(data.slice(8));
+            }
+            if (data.indexOf('[STAGE:') === 0) {
+              updateSidebarProgress(data.slice(7, -1));
+              continue;
+            }
+            fullResult += data;
+            // Update sidebar progressively every ~200 chars
+            var dedupHtml = '<div class="dedup-action-bar"><button class="btn-sm dedup-btn" id="dedup-full-btn" onclick="runDedup(\'full\')">全文降重改写</button><button class="btn-sm dedup-btn" id="dedup-flagged-btn" onclick="runDedup(\'flagged\')">仅改写高风险段落</button><span class="dedup-hint">AI 去重 — 保留公式、数据，仅重述语言</span></div><div class="dedup-result" id="dedup-result" hidden></div>';
+            var loopHtml = _plagLoopCount < _plagLoopMax - 1 ? '<div class="loop-check-bar"><span class="loop-hint">已检查 ' + (_plagLoopCount + 1) + '/' + _plagLoopMax + ' 轮 — 循环检查可提高准确性</span><button class="btn-sm loop-btn" onclick="runPlagiarismCheck(null, ' + (_plagLoopCount + 2) + ')">重新检查 (第' + (_plagLoopCount + 2) + '轮)</button></div>' : '<div class="loop-check-bar"><span class="loop-hint" style="color:var(--green)">已完成 ' + _plagLoopMax + ' 轮深度检查</span></div>';
+            updateSidebarContent('<div class="plagiarism-report-wrapper">' + dedupHtml + loopHtml + '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">AI 辅助查重，结果仅供参考</div>' + marked.parse(fullResult) + '<span class="streaming-cursor-el"></span></div>', _tabId);
+          }
+        } else if (line.indexOf('data: ') === 0) {
+          msgLines.push(line.slice(6));
+        }
+      }
+    }
+
+    // Final render without cursor
+    var dedupHtmlF = '<div class="dedup-action-bar"><button class="btn-sm dedup-btn" id="dedup-full-btn" onclick="runDedup(\'full\')">全文降重改写</button><button class="btn-sm dedup-btn" id="dedup-flagged-btn" onclick="runDedup(\'flagged\')">仅改写高风险段落</button><span class="dedup-hint">AI 去重 — 保留公式、数据，仅重述语言</span></div><div class="dedup-result" id="dedup-result" hidden></div>';
+    var loopHtmlF = _plagLoopCount < _plagLoopMax - 1 ? '<div class="loop-check-bar"><span class="loop-hint">已检查 ' + (_plagLoopCount + 1) + '/' + _plagLoopMax + ' 轮 — 循环检查可提高准确性</span><button class="btn-sm loop-btn" onclick="runPlagiarismCheck(null, ' + (_plagLoopCount + 2) + ')">重新检查 (第' + (_plagLoopCount + 2) + '轮)</button></div>' : '<div class="loop-check-bar"><span class="loop-hint" style="color:var(--green)">已完成 ' + _plagLoopMax + ' 轮深度检查</span></div>';
+    updateSidebarContent('<div class="plagiarism-report-wrapper">' + dedupHtmlF + loopHtmlF + '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">AI 辅助查重，结果仅供参考</div>' + marked.parse(fullResult) + '</div>', _tabId);
+    setTabMeta(_tabId, 'originalContent', text);
+    setTabMeta(_tabId, 'plagiarismReport', fullResult);
+    _plagLoopCount = 1;
   } catch (e) { if (e.name !== 'AbortError') updateSidebarContent('<p class="error-msg">查重分析失败: ' + escapeHtml((e.message || '请检查网络连接').slice(0, 200)) + '</p>', _tabId); }
   finally { setActionLoading('qa-plagiarism-btn', false); }
+}
+
+function _renderPlagiarismResult(tabId, content, originalText, loopIteration) {
+  var dedupHtml = '<div class="dedup-action-bar"><button class="btn-sm dedup-btn" id="dedup-full-btn" onclick="runDedup(\'full\')">全文降重改写</button><button class="btn-sm dedup-btn" id="dedup-flagged-btn" onclick="runDedup(\'flagged\')">仅改写高风险段落</button><span class="dedup-hint">AI 去重 — 保留公式、数据，仅重述语言</span></div><div class="dedup-result" id="dedup-result" hidden></div>';
+  var loopHtml = _plagLoopCount < _plagLoopMax - 1 ? '<div class="loop-check-bar"><span class="loop-hint">已检查 ' + (_plagLoopCount + 1) + '/' + _plagLoopMax + ' 轮 — 循环检查可提高准确性</span><button class="btn-sm loop-btn" onclick="runPlagiarismCheck(null, ' + (_plagLoopCount + 2) + ')">重新检查 (第' + (_plagLoopCount + 2) + '轮)</button></div>' : '<div class="loop-check-bar"><span class="loop-hint" style="color:var(--green)">已完成 ' + _plagLoopMax + ' 轮深度检查</span></div>';
+  updateSidebarContent('<div class="plagiarism-report-wrapper">' + dedupHtml + loopHtml + '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">AI 辅助查重，结果仅供参考</div>' + marked.parse(content) + '</div>', tabId);
+  setTabMeta(tabId, 'originalContent', originalText);
+  setTabMeta(tabId, 'plagiarismReport', content);
+  _plagLoopCount = loopIteration || 1;
 }
 
 // Track current dedup mode for smart replace
@@ -3421,34 +4090,106 @@ async function runDedup(mode) {
   if (fullBtn) { fullBtn.disabled = true; fullBtn.textContent = '改写中...'; }
   if (flaggedBtn) { flaggedBtn.disabled = true; flaggedBtn.textContent = '改写中...'; }
   dedupResult.hidden = false;
-  dedupResult.innerHTML = '<div class="result-sidebar-loading"><div class="spinner"></div><span>' + (mode === 'flagged' ? 'AI 正在针对性改写高风险段落，其余内容保持不变...' : 'AI 正在 AST 解析 → 隔离公式/图表/代码 → 改写纯文本 → 重新组装...') + '</span></div>';
+  dedupResult.innerHTML = '<div class="result-sidebar-loading"><div class="spinner"></div><span>' + (mode === 'flagged' ? 'AI 正在针对性改写高风险段落，其余内容保持不变...' : 'AI 正在 AST 解析 → 隔离公式/图表/代码 → 改写纯文本 → 重新组装...（后台持续运行，可关闭页面）') + '</span></div>';
   dedupResult.scrollIntoView({ behavior: 'smooth' });
 
   try {
-    const res = await fetch(endpoint, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(requestBody),
-    });
-    const data = await res.json();
-    if (data.error) {
-      dedupResult.innerHTML = `<p class="error-msg">${escapeHtml(data.error)}</p>`;
+    if (mode === 'full') {
+      // ── AST Dedup: use background task (survives page close) ──
+      var taskRes = await fetch('/api/tasks/deduplicate-ast', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody),
+      });
+      var taskData = await taskRes.json();
+      if (taskData.error) throw new Error(taskData.error);
+
+      var taskId = taskData.task_id;
+      _startTaskPolling('dedup-full', taskId, function(result) {
+        if (result && result.content) {
+          dedupResult.dataset.rewrittenContent = result.content;
+          var lbl = '全文降重结果（AST 无损 — 公式/图表/代码原样保留）';
+          dedupResult.innerHTML = '<h3>' + lbl + '</h3>' +
+            '<div class="dedup-actions">' +
+              '<button class="btn-sm" onclick="copyDedupResult(this)">复制改写内容</button>' +
+              '<button class="btn-sm" onclick="replaceWithDedup(this)">替换原文</button>' +
+            '</div>' + marked.parse(result.content);
+        }
+        if (fullBtn) { fullBtn.disabled = false; fullBtn.textContent = '全文降重改写'; }
+        if (flaggedBtn) { flaggedBtn.disabled = false; flaggedBtn.textContent = '仅改写高风险段落'; }
+      }, function(err) {
+        dedupResult.innerHTML = '<p class="error-msg">降重改写失败: ' + escapeHtml((err || '请重试').slice(0, 200)) + '</p>';
+        if (fullBtn) { fullBtn.disabled = false; fullBtn.textContent = '全文降重改写'; }
+        if (flaggedBtn) { flaggedBtn.disabled = false; flaggedBtn.textContent = '仅改写高风险段落'; }
+      });
+
+      // Update loading message with progress from polling
+      var _prevProgress = 0;
+      var _progressCheck = setInterval(function() {
+        var t = _runningTasks['dedup-full'];
+        if (!t || t.progress >= 100 || t.progress < 0) { clearInterval(_progressCheck); return; }
+        if (t.progress !== _prevProgress) {
+          _prevProgress = t.progress;
+          dedupResult.innerHTML = '<div class="result-sidebar-loading"><div class="spinner"></div><span>' + escapeHtml(t.stage || '处理中...') + ' (' + t.progress + '%)</span></div>';
+        }
+      }, 500);
     } else {
-      // Store the rewritten full content for replace
-      dedupResult.dataset.rewrittenContent = data.content;
-      const label = mode === 'flagged' ? '针对性降重结果（仅高风险段落已改写，其余保持原文）' : '全文降重结果（AST 无损 — 公式/图表/代码原样保留）';
-      dedupResult.innerHTML = `
-        <h3>${label}</h3>
-        <div class="dedup-actions">
-          <button class="btn-sm" onclick="copyDedupResult(this)">复制改写内容</button>
-          <button class="btn-sm" onclick="replaceWithDedup(this)">${mode === 'flagged' ? '应用修改到原文' : '替换原文'}</button>
-          ${mode === 'flagged' ? '<span style="font-size:11px;color:var(--text-secondary);margin-left:4px">仅替换高风险段落，其余内容不变</span>' : ''}
-        </div>
-        ${data.note ? '<p style="font-size:12px;color:var(--text-secondary);margin-bottom:8px">' + escapeHtml(data.note) + '</p>' : ''}
-        ${marked.parse(data.content)}`;
+      // ── Targeted Dedup: use streaming (faster, real-time) ──
+      var streamEndpoint = endpoint + '/stream';
+      var res = await fetch(streamEndpoint, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody),
+        signal: _sidebarAbortController?.signal,
+      });
+      if (!res.ok) {
+        var errData = await res.json().catch(function() { return {}; });
+        throw new Error(errData.error || 'HTTP ' + res.status);
+      }
+      var reader = res.body.getReader();
+      var decoder = new TextDecoder();
+      var buffer = '';
+      var fullContent = '';
+      var msgLines = [];
+
+      while (true) {
+        var readResult = await reader.read();
+        if (readResult.done) break;
+        buffer += decoder.decode(readResult.value, { stream: true });
+        var lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+        for (var li = 0; li < lines.length; li++) {
+          var line = lines[li];
+          if (line === '' || line === '\r') {
+            if (msgLines.length > 0) {
+              var data = msgLines.join('\n');
+              msgLines = [];
+              if (data === '[DONE]') continue;
+              if (data.indexOf('[ERROR]') === 0) throw new Error(data.slice(8));
+              if (data.indexOf('[STAGE:') === 0) {
+                dedupResult.innerHTML = '<div class="result-sidebar-loading"><div class="spinner"></div><span>' + escapeHtml(data.slice(7, -1)) + '</span></div>';
+                continue;
+              }
+              fullContent += data;
+              dedupResult.innerHTML = marked.parse(fullContent) + '<span class="streaming-cursor-el"></span>';
+            }
+          } else if (line.indexOf('data: ') === 0) {
+            msgLines.push(line.slice(6));
+          }
+        }
+      }
+
+      if (!fullContent.trim()) throw new Error('Empty response from server');
+      dedupResult.dataset.rewrittenContent = fullContent;
+      dedupResult.innerHTML = '<h3>针对性降重结果（仅高风险段落已改写，其余保持原文）</h3>' +
+        '<div class="dedup-actions">' +
+          '<button class="btn-sm" onclick="copyDedupResult(this)">复制改写内容</button>' +
+          '<button class="btn-sm" onclick="replaceWithDedup(this)">应用修改到原文</button>' +
+          '<span style="font-size:11px;color:var(--text-secondary);margin-left:4px">仅替换高风险段落，其余内容不变</span>' +
+        '</div>' + marked.parse(fullContent);
+      if (fullBtn) { fullBtn.disabled = false; fullBtn.textContent = '全文降重改写'; }
+      if (flaggedBtn) { flaggedBtn.disabled = false; flaggedBtn.textContent = '仅改写高风险段落'; }
     }
   } catch (e) {
-    dedupResult.innerHTML = '<p class="error-msg">降重改写失败: ' + escapeHtml((e.message || '请重试').slice(0, 200)) + '</p>';
-  } finally {
+    if (e.name !== 'AbortError') dedupResult.innerHTML = '<p class="error-msg">降重改写失败: ' + escapeHtml((e.message || '请重试').slice(0, 200)) + '</p>';
     if (fullBtn) { fullBtn.disabled = false; fullBtn.textContent = '全文降重改写'; }
     if (flaggedBtn) { flaggedBtn.disabled = false; flaggedBtn.textContent = '仅改写高风险段落'; }
   }
@@ -3544,8 +4285,7 @@ async function runReferenceCheck(textOverride, loopIteration) {
       updateSidebarContent(`<p class="error-msg">${escapeHtml(data.error)}</p>`, _tabId);
     } else {
       var fakeCount = data.fake || 0;
-      var replaceAllBtn = fakeCount > 0 ? `<button class="btn-sm" onclick="replaceAllFakeRefs()" style="background:var(--accent);color:#fff;border:none;margin-bottom:12px">一键替换虚假引用为真实文献</button>` : '';
-      var groundingBtn = fakeCount > 0 ? `<button class="btn-sm" onclick="runCitationGrounding()" style="background:var(--purple, #7c3aed);color:#fff;border:none;margin-bottom:12px;margin-left:6px">AI 自动修正 (RAG 检索)</button>` : '';
+      var ragCheckBtn = fakeCount > 0 ? '<button class="btn-sm" onclick="runRagOriginalityCheck()" style="background:var(--accent);color:#fff;border:none;margin-bottom:12px">执行 RAG 原创性检验（查重 + 引用修正）</button>' : '';
       var loopHtml = _refLoopCount < _refLoopMax - 1 ? `
         <div class="loop-check-bar">
           <span class="loop-hint">已验证 ${_refLoopCount + 1}/${_refLoopMax} 轮 — 循环验证可提高召回率</span>
@@ -3556,7 +4296,7 @@ async function runReferenceCheck(textOverride, loopIteration) {
           <span class="verify-stat verified">✓ ${data.verified} 条已验证</span>
           <span class="verify-stat fake">✗ ${data.fake} 条未找到</span>
         </div>
-        ${replaceAllBtn}${groundingBtn}
+        ${ragCheckBtn}
         ${loopHtml}
         ${data.results.map(function(r, i) { return `
           <div class="verify-ref-item ${r.status}">
@@ -3727,22 +4467,40 @@ async function runCitationGrounding() {
       return;
     }
 
-    // Build result display with before/after diff
+    // Build rich result display with stats + before/after diff
     var correctionsHtml = '';
     var correctedCount = 0;
+    var realCount = 0;
+    var failedCount = 0;
     if (data.corrections && data.corrections.length > 0) {
-      data.corrections.forEach(function(c) { if (c.is_corrected) correctedCount++; });
-      correctionsHtml = '<div style="margin-top:12px">' +
-        '<div class="corrections-summary">' +
-          '<span class="verify-stat verified">✓ ' + correctedCount + ' 条引用已修正</span>' +
-          (data.corrections.length - correctedCount > 0 ? '<span class="verify-stat fake">✗ ' + (data.corrections.length - correctedCount) + ' 条未能修正</span>' : '') +
-        '</div>' +
-        '<p style="font-size:12px;color:var(--text-secondary);margin:8px 0">以下为每条修正的前后对比，<span style="color:#dc2626">红色</span>为原文，<span style="color:#16a34a">绿色</span>为修正后：</p>';
+      data.corrections.forEach(function(c) {
+        if (c.is_corrected) correctedCount++;
+        else if (c.note && c.note.indexOf('Already real') !== -1) realCount++;
+        else failedCount++;
+      });
+      var total = data.corrections.length;
 
+      // ── Header stats bar ──
+      correctionsHtml = '<div class="citation-stats-bar">' +
+        '<div class="citation-stat"><span class="citation-stat-num">' + total + '</span><span class="citation-stat-label">总计</span></div>' +
+        '<div class="citation-stat verified"><span class="citation-stat-num">' + realCount + '</span><span class="citation-stat-label">已验证</span></div>' +
+        '<div class="citation-stat corrected"><span class="citation-stat-num">' + correctedCount + '</span><span class="citation-stat-label">已修正</span></div>' +
+        (failedCount > 0 ? '<div class="citation-stat failed"><span class="citation-stat-num">' + failedCount + '</span><span class="citation-stat-label">未修复</span></div>' : '') +
+        '</div>';
+
+      // Progress bar
+      var pctOk = Math.round((realCount + correctedCount) / Math.max(total, 1) * 100);
+      correctionsHtml += '<div class="citation-progress-bar"><div class="citation-progress-fill" style="width:' + pctOk + '%"></div></div>';
+      correctionsHtml += '<p style="font-size:12px;color:var(--text-secondary);margin:8px 0 16px">' + pctOk + '% 引用可信 — 以下为每条修正的详细对比：</p>';
+
+      // ── Diff cards ──
       data.corrections.forEach(function(c, i) {
         if (c.is_corrected) {
           correctionsHtml += '<div class="citation-diff-card">' +
-            '<div class="citation-diff-header">[' + escapeHtml(c.ref_id || ('#' + (i + 1))) + '] 引用修正</div>' +
+            '<div class="citation-diff-header">' +
+              '<span class="citation-diff-id">[' + escapeHtml(c.ref_id || ('#' + (i + 1))) + ']</span>' +
+              '<span class="citation-diff-badge corrected">已修正</span>' +
+            '</div>' +
             '<div class="citation-diff-row citation-diff-old">' +
               '<span class="citation-diff-label">旧</span>' +
               '<span class="citation-diff-text">' + escapeHtml(c.old_text || '') + '</span>' +
@@ -3752,14 +4510,30 @@ async function runCitationGrounding() {
               '<span class="citation-diff-label">新</span>' +
               '<span class="citation-diff-text">' + escapeHtml(c.new_text || '') + '</span>' +
             '</div>' +
+            (c.note ? '<div class="citation-diff-note">' + escapeHtml(c.note) + '</div>' : '') +
+            '</div>';
+        } else if (c.note && c.note.indexOf('Already real') !== -1) {
+          correctionsHtml += '<div class="citation-diff-card citation-diff-real">' +
+            '<div class="citation-diff-header">' +
+              '<span class="citation-diff-id">[' + escapeHtml(c.ref_id || ('#' + (i + 1))) + ']</span>' +
+              '<span class="citation-diff-badge real">真实存在</span>' +
+            '</div>' +
+            '<div class="citation-diff-row citation-diff-ok">' +
+              '<span class="citation-diff-label">✓</span>' +
+              '<span class="citation-diff-text">' + escapeHtml(c.old_text || '') + '</span>' +
+            '</div>' +
             '</div>';
         } else if (c.old_text) {
           correctionsHtml += '<div class="citation-diff-card citation-diff-uncorrected">' +
-            '<div class="citation-diff-header">[' + escapeHtml(c.ref_id || ('#' + (i + 1))) + '] 未能修正 — 建议手动核查</div>' +
+            '<div class="citation-diff-header">' +
+              '<span class="citation-diff-id">[' + escapeHtml(c.ref_id || ('#' + (i + 1))) + ']</span>' +
+              '<span class="citation-diff-badge failed">未能修正</span>' +
+            '</div>' +
             '<div class="citation-diff-row citation-diff-old">' +
               '<span class="citation-diff-label">原文</span>' +
               '<span class="citation-diff-text">' + escapeHtml(c.old_text).slice(0, 200) + '</span>' +
             '</div>' +
+            (c.note ? '<div class="citation-diff-note">' + escapeHtml(c.note) + '</div>' : '<div class="citation-diff-note">建议手动核查此引用</div>') +
             '</div>';
         }
       });
@@ -3767,14 +4541,17 @@ async function runCitationGrounding() {
     }
 
     updateSidebarContent(
-      '<h3>RAG 引用修正报告</h3>' +
-      marked.parse(data.summary || '') +
+      '<h3 style="margin-bottom:16px">RAG 引用自主修正报告</h3>' +
+      (data.summary ? marked.parse(data.summary) : '') +
       correctionsHtml +
-      '<div style="margin-top:12px"><button class="btn-sm" onclick="replaceWithGroundedRefs(this)" style="background:var(--accent);color:#fff;border:none">应用修正到原文</button></div>',
+      '<div style="margin-top:16px;display:flex;gap:8px">' +
+        '<button class="btn-sm" onclick="replaceWithGroundedRefs(this)" style="background:var(--accent);color:#fff;border:none;flex:1">应用修正到原文（AST无损 — 仅替换引用文本）</button>' +
+      '</div>',
       activeId
     );
 
     setTabMeta(activeId, 'groundedContent', data.content);
+    setTabMeta(activeId, 'corrections', JSON.stringify(data.corrections || []));
   } catch (e) {
     updateSidebarContent('<p class="error-msg">RAG 引用修正失败: ' + escapeHtml((e.message || '请重试').slice(0, 200)) + '</p>', activeId);
   }
@@ -3782,9 +4559,13 @@ async function runCitationGrounding() {
 
 function replaceWithGroundedRefs(btn) {
   if (btn && btn.disabled) return;
-  if (btn) { btn.disabled = true; btn.textContent = '替换中...'; }
+  if (btn) { btn.disabled = true; btn.setAttribute('data-orig-text', btn.textContent); btn.textContent = '应用修正中...'; }
 
-  var groundedContent = getTabMeta(_sidebarActiveTabId, 'groundedContent') || '';
+  var activeId = _sidebarActiveTabId;
+  var groundedContent = getTabMeta(activeId, 'groundedContent') || '';
+  var corrections = JSON.parse(getTabMeta(activeId, 'corrections') || '[]');
+  var correctedOnly = corrections.filter(function(c) { return c.is_corrected && c.old_text; });
+
   if (!groundedContent.trim()) { showToast('没有可替换的内容'); if (btn) btn.disabled = false; return; }
 
   var resultContent = getActiveContent();
@@ -3796,7 +4577,107 @@ function replaceWithGroundedRefs(btn) {
       textarea.value = groundedContent;
       showToast('已替换编辑区内容');
     }
+    if (btn) btn.disabled = false;
+    return;
+  }
+
+  // ── Visual feedback: highlight each correction card sequentially ──
+  var diffCards = document.querySelectorAll('.citation-diff-card');
+  var correctedCards = [];
+  diffCards.forEach(function(card) {
+    if (!card.classList.contains('citation-diff-uncorrected')) correctedCards.push(card);
+  });
+
+  if (correctedCards.length > 0) {
+    var idx = 0;
+    function highlightNext() {
+      if (idx >= correctedCards.length) {
+        // All highlighted — now swap content
+        _swapGroundedContent(resultContent, groundedContent, btn, correctedCards.length);
+        return;
+      }
+      var card = correctedCards[idx];
+      card.style.transition = 'all .3s ease';
+      card.style.transform = 'scale(1.02)';
+      card.style.boxShadow = '0 0 0 3px var(--accent)';
+      card.style.borderColor = 'var(--accent)';
+      card.querySelector('.citation-diff-header').textContent = '✓ 正在应用: ' + card.querySelector('.citation-diff-header').textContent.replace('引用修正', '');
+      card.querySelector('.citation-diff-row.citation-diff-old').style.opacity = '0.4';
+      card.querySelector('.citation-diff-row.citation-diff-new').style.background = '#dcfce7';
+      if (btn) btn.textContent = '应用修正中 (' + (idx + 1) + '/' + correctedCards.length + ')...';
+      idx++;
+      setTimeout(highlightNext, 600);
+    }
+    highlightNext();
   } else {
+    _swapGroundedContent(resultContent, groundedContent, btn, 0);
+  }
+}
+
+function _swapGroundedContent(resultContent, groundedContent, btn, count) {
+  // ── AST-safe DOM replacement ──
+  // Instead of destroying the entire DOM with renderTo (which breaks layout,
+  // containers, and custom formatting), apply corrections directly to text nodes.
+  var activeId = _sidebarActiveTabId;
+  var corrections = JSON.parse(getTabMeta(activeId, 'corrections') || '[]');
+  var correctedOnly = corrections.filter(function(c) { return c.is_corrected && c.old_text && c.new_text; });
+
+  var changedCount = 0;
+  if (correctedOnly.length > 0) {
+    var walker = document.createTreeWalker(resultContent, NodeFilter.SHOW_TEXT, null, false);
+    var textNodes = [];
+    var node;
+    while (node = walker.nextNode()) {
+      // Skip nodes inside code/pre/math elements
+      var parent = node.parentElement;
+      if (parent && (parent.tagName === 'CODE' || parent.tagName === 'PRE' || parent.closest('.math') || parent.closest('.katex'))) continue;
+      if (node.textContent.trim().length > 3) textNodes.push(node);
+    }
+
+    correctedOnly.forEach(function(c) {
+      var oldRef = c.old_text.slice(0, 150).trim();
+      var newRef = (c.new_text || '').trim();
+      if (!oldRef || !newRef || oldRef === newRef) return;
+
+      // Try exact match first
+      var found = false;
+      for (var i = 0; i < textNodes.length; i++) {
+        var nodeText = textNodes[i].textContent;
+        var idx = nodeText.indexOf(oldRef);
+        if (idx !== -1) {
+          textNodes[i].textContent = nodeText.slice(0, idx) + newRef + nodeText.slice(idx + oldRef.length);
+          changedCount++;
+          found = true;
+          break;
+        }
+      }
+      // Try loose match: first 50 chars + flexible
+      if (!found) {
+        var head = oldRef.slice(0, 50);
+        for (var j = 0; j < textNodes.length; j++) {
+          var nt = textNodes[j].textContent;
+          var hidx = nt.indexOf(head);
+          if (hidx !== -1) {
+            // Find end of the reference (next reference or end of line)
+            var end = nt.indexOf('\n', hidx);
+            if (end === -1) end = nt.length;
+            var oldInDom = nt.slice(hidx, end).trim();
+            textNodes[j].textContent = nt.slice(0, hidx) + newRef + nt.slice(end);
+            changedCount++;
+            break;
+          }
+        }
+      }
+    });
+
+    // Re-render math for any new LaTeX in reference replacements
+    if (changedCount > 0 && typeof renderMathInElement !== 'undefined') {
+      try { renderMathInElement(resultContent, {delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false},{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}],throwOnError:false}); } catch(e) {}
+    }
+  }
+
+  if (changedCount === 0) {
+    // Fallback: if no DOM matches found, do full render but preserve containers
     resultContent.style.transition = 'opacity .12s ease';
     resultContent.style.opacity = '0';
     setTimeout(function() {
@@ -3812,10 +4693,11 @@ function replaceWithGroundedRefs(btn) {
       }
       resultContent.style.opacity = '1';
       setTimeout(function() { resultContent.style.transition = ''; }, 150);
-      if (btn) { btn.disabled = false; btn.textContent = '应用修正到原文'; }
     }, 130);
-    showToast('已应用引用修正');
   }
+
+  if (btn) { btn.disabled = false; var origText = btn.getAttribute('data-orig-text') || '应用修正到原文'; btn.textContent = origText; }
+  showToast(changedCount > 0 ? '已应用 ' + changedCount + ' 条引用修正（AST 无损 — 布局完整保留）' : (count > 0 ? '已应用 ' + count + ' 条引用修正' : '已应用引用修正'));
 }
 
 async function runMathCheck() {
@@ -3827,15 +4709,13 @@ async function runMathCheck() {
   var _tabId = showSidebar('数学推导验证', ['正在提取公式...', '正在独立推导验证...', '正在生成验证报告...'], 'math-check');
   setActionLoading('qa-verify-math-btn', true);
   try {
-    const res = await fetch('/api/verify-math', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content: text }),
-      signal: _sidebarAbortController?.signal,
-    });
-    const data = await res.json();
-    updateSidebarContent(data.error
-      ? `<p class="error-msg">${escapeHtml(data.error)}</p>`
-      : `<h3>数学推导验证报告</h3><div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">独立复核结果，请逐项核实</div>${marked.parse(data.content)}`, _tabId);
+    var fullResult = await _streamToolResponse(
+      '/api/verify-math/stream',
+      { content: text },
+      _tabId,
+      function(result) { updateSidebarContent('<h3>数学推导验证报告</h3><div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">独立复核结果，请逐项核实</div>' + marked.parse(result) + '<span class="streaming-cursor-el"></span>', _tabId); }
+    );
+    updateSidebarContent('<h3>数学推导验证报告</h3><div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">独立复核结果，请逐项核实</div>' + marked.parse(fullResult), _tabId);
   } catch (e) { if (e.name !== 'AbortError') updateSidebarContent('<p class="error-msg">数学验证失败: ' + escapeHtml((e.message || '请检查网络连接').slice(0, 200)) + '</p>', _tabId); }
   finally { setActionLoading('qa-verify-math-btn', false); }
 }
@@ -3857,15 +4737,13 @@ async function runAbstractRefine() {
   setActionLoading('qa-abstract-btn', true);
   try {
     const contestType = document.getElementById('paper-contest-type')?.value || 'MCM/ICM';
-    const res = await fetch('/api/refine-abstract', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ abstract, contest_type: contestType }),
-      signal: _sidebarAbortController?.signal,
-    });
-    const data = await res.json();
-    updateSidebarContent(data.error
-      ? `<p class="error-msg">${escapeHtml(data.error)}</p>`
-      : `<h3>摘要精修报告</h3><div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">按 COMAP 标准逐条审查</div>${marked.parse(data.content)}`, _tabId);
+    var fullResult = await _streamToolResponse(
+      '/api/refine-abstract/stream',
+      { abstract: abstract, contest_type: contestType },
+      _tabId,
+      function(result) { updateSidebarContent('<h3>摘要精修报告</h3><div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">按 COMAP 标准逐条审查</div>' + marked.parse(result) + '<span class="streaming-cursor-el"></span>', _tabId); }
+    );
+    updateSidebarContent('<h3>摘要精修报告</h3><div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">按 COMAP 标准逐条审查</div>' + marked.parse(fullResult), _tabId);
   } catch (e) { if (e.name !== 'AbortError') updateSidebarContent('<p class="error-msg">摘要分析失败: ' + escapeHtml((e.message || '请检查网络连接').slice(0, 200)) + '</p>', _tabId); }
   finally { setActionLoading('qa-abstract-btn', false); }
 }

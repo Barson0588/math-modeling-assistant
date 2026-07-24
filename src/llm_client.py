@@ -11,7 +11,7 @@ def _make_client(api_key):
     return OpenAI(
         api_key=api_key,
         base_url=DEFAULT_BASE_URL,
-        timeout=90.0,
+        timeout=120.0,
     )
 
 

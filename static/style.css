@@ -1530,6 +1530,7 @@ footer { text-align: center; padding: 24px; color: var(--text-secondary); font-s
 .quick-action-btn.edit-action:hover { background: #f5f3ff; color: var(--purple); }
 .quick-action-btn.plagiarism-action:hover { background: #fef2f2; color: var(--red); }
 .quick-action-btn.verify-refs-action:hover { background: #f0fdf4; color: var(--green); }
+.quick-action-btn.rag-check-action:hover { background: #fdf2f8; color: #be185d; }
 .quick-action-btn.verify-math-action:hover { background: var(--accent-light); color: var(--accent); }
 .quick-action-btn.abstract-action:hover { background: #f0f9ff; color: #0284c7; }
 .quick-action-btn.sensitivity-action:hover { background: #fff7ed; color: #ea580c; }
@@ -1541,12 +1542,49 @@ footer { text-align: center; padding: 24px; color: var(--text-secondary); font-s
 [data-theme="dark"] .quick-action-btn.edit-action:hover { background: #1e1040; color: #a78bfa; }
 [data-theme="dark"] .quick-action-btn.plagiarism-action:hover { background: #3d0a0a; color: #fca5a5; }
 [data-theme="dark"] .quick-action-btn.verify-refs-action:hover { background: #042f2e; color: #4ade80; }
+[data-theme="dark"] .quick-action-btn.rag-check-action:hover { background: #3d1030; color: #f9a8d4; }
 [data-theme="dark"] .quick-action-btn.verify-math-action:hover { background: #0c2d48; color: #60a5fa; }
 [data-theme="dark"] .quick-action-btn.abstract-action:hover { background: #0c2d48; color: #38bdf8; }
 [data-theme="dark"] .quick-action-btn.sensitivity-action:hover { background: #3d1a04; color: #fb923c; }
 [data-theme="dark"] .quick-action-btn.score-action:hover { background: #3d3404; color: #facc15; }
 [data-theme="dark"] .quick-action-btn.figures-action:hover { background: #3d0a28; color: #f472b6; }
 [data-theme="dark"] .quick-action-btn.compare-action:hover { background: #042f2e; color: #2dd4bf; }
+
+/* ── Progress tooltip on hover ── */
+.quick-action-btn.tool-running {
+  position: relative;
+  overflow: visible;
+}
+.quick-action-btn.tool-running::after {
+  content: attr(data-progress) '%';
+  position: absolute;
+  right: -2px;
+  top: -2px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 8px;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+.quick-action-btn.tool-running:hover::before {
+  content: attr(data-stage);
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--text);
+  color: var(--bg);
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  white-space: nowrap;
+  z-index: 100;
+  pointer-events: none;
+  box-shadow: 0 2px 8px rgba(0,0,0,.15);
+}
 [data-theme="dark"] .quick-action-btn.review-action:hover { background: #2d1f00; color: #fbbf24; }
 [data-theme="dark"] .quick-action-btn.export-action:hover { background: #1e1040; color: #a78bfa; }
 
@@ -2027,6 +2065,413 @@ footer { text-align: center; padding: 24px; color: var(--text-secondary); font-s
 [data-theme="dark"] .citation-diff-old { background: #3b1515; }
 [data-theme="dark"] .citation-diff-new { background: #0f2f24; }
 [data-theme="dark"] .citation-diff-uncorrected .citation-diff-header { background: #3b1515; }
+
+/* Enhanced citation stats bar */
+.citation-stats-bar {
+  display: flex; gap: 8px; margin-bottom: 12px;
+}
+.citation-stat {
+  flex: 1; text-align: center; padding: 10px 8px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+}
+.citation-stat-num {
+  display: block; font-size: 22px; font-weight: 700; color: var(--text); line-height: 1.2;
+}
+.citation-stat-label {
+  display: block; font-size: 11px; color: var(--text-secondary); margin-top: 2px;
+}
+.citation-stat.verified .citation-stat-num { color: #16a34a; }
+.citation-stat.corrected .citation-stat-num { color: var(--accent); }
+.citation-stat.failed .citation-stat-num { color: #dc2626; }
+.citation-progress-bar {
+  height: 6px; background: var(--border); border-radius: 3px; margin-bottom: 4px; overflow: hidden;
+}
+.citation-progress-fill {
+  height: 100%; background: linear-gradient(90deg, #16a34a, var(--accent));
+  border-radius: 3px; transition: width .5s ease;
+}
+.citation-diff-id {
+  font-weight: 600; color: var(--text);
+}
+.citation-diff-badge {
+  margin-left: 8px; font-size: 10px; font-weight: 600; padding: 2px 6px; border-radius: 10px;
+}
+.citation-diff-badge.corrected { background: #dcfce7; color: #16a34a; }
+.citation-diff-badge.real { background: #dcfce7; color: #16a34a; }
+.citation-diff-badge.failed { background: #fef2f2; color: #dc2626; }
+.citation-diff-real { border-left: 3px solid #16a34a; opacity: .85; }
+.citation-diff-real .citation-diff-header { background: #f0fdf4; }
+.citation-diff-row.citation-diff-ok { background: #f0fdf4; }
+.citation-diff-note {
+  font-size: 11px; color: var(--text-secondary); padding: 4px 10px 8px;
+  font-style: italic;
+}
+[data-theme="dark"] .citation-stat.verified .citation-stat-num { color: #4ade80; }
+[data-theme="dark"] .citation-stat.failed .citation-stat-num { color: #fca5a5; }
+[data-theme="dark"] .citation-diff-real .citation-diff-header { background: #0f2f24; }
+[data-theme="dark"] .citation-diff-row.citation-diff-ok { background: #0f2f24; }
+[data-theme="dark"] .citation-diff-badge.corrected,
+[data-theme="dark"] .citation-diff-badge.real { background: #0f2f24; color: #4ade80; }
+[data-theme="dark"] .citation-diff-badge.failed { background: #3b1515; color: #fca5a5; }
+
+/* ── Unified RAG Check: Sections & Diff Preview ─────────────────────── */
+
+.rag-section {
+  margin-bottom: 24px;
+}
+
+.rag-section-title {
+  font-size: 15px;
+  font-weight: 650;
+  color: var(--text);
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.rag-section-icon {
+  font-size: 16px;
+}
+
+.rag-plagiarism-content {
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--text);
+}
+
+.rag-loading-indicator {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 20px 16px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  background: var(--surface);
+  border-radius: var(--radius-sm);
+  border: 1px dashed var(--border);
+}
+
+.rag-spinner {
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: rag-spin 0.7s linear infinite;
+}
+
+@keyframes rag-spin {
+  to { transform: rotate(360deg); }
+}
+
+.rag-summary {
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--text-secondary);
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  background: var(--accent-light);
+  border-radius: var(--radius-sm);
+  border-left: 3px solid var(--accent);
+}
+
+.rag-pct-hint {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin: 8px 0 16px;
+}
+
+/* ── GitHub-style Unified Diff ── */
+
+.rag-diff-container {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  margin-bottom: 16px;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.rag-diff-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: #f6f8fa;
+  border-bottom: 1px solid var(--border);
+  font-family: var(--font);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.rag-diff-header-label {
+  color: var(--text);
+}
+
+.rag-diff-header-count {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: #e8eaef;
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+
+.rag-diff-block {
+  border-bottom: 1px solid var(--border);
+}
+
+.rag-diff-block:last-child {
+  border-bottom: none;
+}
+
+.rag-diff-block-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  background: #fafbfc;
+  font-family: var(--font);
+  font-size: 12px;
+}
+
+.rag-diff-ref-label {
+  font-weight: 650;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.rag-diff-badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 8px;
+  font-family: var(--font);
+}
+
+.rag-diff-badge.corrected { background: #dcfce7; color: #16a34a; }
+.rag-diff-badge.real { background: #dcfce7; color: #16a34a; }
+.rag-diff-badge.failed { background: #fef2f2; color: #dc2626; }
+
+.rag-diff-lines {
+  /* container for diff lines */
+}
+
+.rag-diff-line {
+  display: flex;
+  align-items: flex-start;
+  padding: 4px 14px;
+  min-height: 26px;
+  word-break: break-word;
+}
+
+.rag-diff-sign {
+  flex-shrink: 0;
+  width: 18px;
+  font-weight: 700;
+  text-align: center;
+  margin-right: 8px;
+  user-select: none;
+}
+
+.rag-diff-text {
+  flex: 1;
+  white-space: pre-wrap;
+}
+
+/* Deleted line: red background */
+.rag-diff-del {
+  background: #ffeef0;
+}
+
+.rag-diff-del .rag-diff-sign {
+  color: #cb2431;
+}
+
+.rag-diff-del .rag-diff-text {
+  color: #86181d;
+}
+
+/* Added line: green background */
+.rag-diff-add {
+  background: #e6ffed;
+}
+
+.rag-diff-add .rag-diff-sign {
+  color: #22863a;
+}
+
+.rag-diff-add .rag-diff-text {
+  color: #144620;
+}
+
+/* Kept line (real reference) */
+.rag-diff-keep {
+  background: #f0fdf4;
+}
+
+.rag-diff-keep .rag-diff-sign {
+  color: #16a34a;
+}
+
+/* Failed / uncorrected block */
+.rag-diff-failed .rag-diff-block-header {
+  background: #fef2f2;
+}
+
+/* OK / already-real block */
+.rag-diff-ok .rag-diff-block-header {
+  background: #f0fdf4;
+}
+
+.rag-diff-note {
+  padding: 6px 14px 8px;
+  font-family: var(--font);
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-style: italic;
+  background: #fafbfc;
+}
+
+/* ── Apply bar ── */
+
+.rag-apply-bar {
+  margin-top: 20px;
+  padding: 16px;
+  background: #fffbeb;
+  border: 1px solid #fcd34d;
+  border-radius: var(--radius-sm);
+  text-align: center;
+}
+
+.rag-apply-bar.rag-apply-clean {
+  background: #ecfdf5;
+  border-color: #6ee7b7;
+}
+
+.rag-apply-hint {
+  font-size: 12px;
+  color: #92400e;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.rag-apply-icon {
+  font-size: 14px;
+}
+
+.rag-apply-btn {
+  padding: 10px 24px;
+  font-size: 14px;
+  font-weight: 600;
+  border-radius: var(--radius-sm);
+}
+
+/* ── Dark mode ── */
+
+[data-theme="dark"] .rag-diff-container {
+  border-color: var(--border);
+}
+
+[data-theme="dark"] .rag-diff-header {
+  background: #1c1e26;
+  border-color: var(--border);
+}
+
+[data-theme="dark"] .rag-diff-header-count {
+  background: #2d3040;
+  color: #8b8fa6;
+}
+
+[data-theme="dark"] .rag-diff-block-header {
+  background: #1a1c24;
+}
+
+[data-theme="dark"] .rag-diff-del {
+  background: #2d1519;
+}
+
+[data-theme="dark"] .rag-diff-del .rag-diff-sign {
+  color: #f85149;
+}
+
+[data-theme="dark"] .rag-diff-del .rag-diff-text {
+  color: #ffa198;
+}
+
+[data-theme="dark"] .rag-diff-add {
+  background: #12261e;
+}
+
+[data-theme="dark"] .rag-diff-add .rag-diff-sign {
+  color: #3fb950;
+}
+
+[data-theme="dark"] .rag-diff-add .rag-diff-text {
+  color: #7ee787;
+}
+
+[data-theme="dark"] .rag-diff-keep {
+  background: #0f2f24;
+}
+
+[data-theme="dark"] .rag-diff-keep .rag-diff-sign {
+  color: #4ade80;
+}
+
+[data-theme="dark"] .rag-diff-failed .rag-diff-block-header {
+  background: #3b1515;
+}
+
+[data-theme="dark"] .rag-diff-ok .rag-diff-block-header {
+  background: #0f2f24;
+}
+
+[data-theme="dark"] .rag-diff-note {
+  background: #1a1c24;
+}
+
+[data-theme="dark"] .rag-apply-bar {
+  background: #2d2010;
+  border-color: #7a5d10;
+}
+
+[data-theme="dark"] .rag-apply-bar.rag-apply-clean {
+  background: #0f2f24;
+  border-color: #1a5c3a;
+}
+
+[data-theme="dark"] .rag-apply-hint {
+  color: #fbbf24;
+}
+
+[data-theme="dark"] .rag-summary {
+  background: #1a2030;
+  border-left-color: var(--accent);
+}
+
+[data-theme="dark"] .rag-diff-badge.corrected,
+[data-theme="dark"] .rag-diff-badge.real { background: #0f2f24; color: #4ade80; }
+[data-theme="dark"] .rag-diff-badge.failed { background: #3b1515; color: #fca5a5; }
+
+[data-theme="dark"] .rag-loading-indicator {
+  background: #161820;
+  border-color: #262832;
+}
+
+[data-theme="dark"] .rag-spinner {
+  border-color: #262832;
+  border-top-color: var(--accent);
+}
 
 .edit-mode-indicator {
   position: sticky; top: 8px; z-index: 10;

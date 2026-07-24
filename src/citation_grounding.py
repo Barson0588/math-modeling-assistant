@@ -39,7 +39,7 @@ logger = logging.getLogger(__name__)
 
 # Patterns for extracting references from Markdown papers
 _RE_REF_HEADER = re.compile(
-    r'(?:^|\n)#{1,3}\s*(?:References?|参考文献|Bibliography|Works?\s*Cited)\s*\n',
+    r'(?:^|\n)(?:#{1,3}\s*)?(?:References?|REFERENCES?|参考文献|Bibliography|Works?\s*Cited|Literature\s*Cited)\s*\n',
     re.IGNORECASE,
 )
 
