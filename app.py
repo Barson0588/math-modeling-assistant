@@ -144,6 +144,23 @@ class TaskManager:
 task_manager = TaskManager()
 
 
+def _run_with_timeout(fn, timeout_sec, *args, **kwargs):
+    """Run fn in a separate thread with a hard timeout.
+
+    Returns (result, None) on success, or (None, error_msg) on timeout/error.
+    Uses ThreadPoolExecutor so the orphaned thread can't block shutdown.
+    """
+    from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(fn, *args, **kwargs)
+        try:
+            return future.result(timeout=timeout_sec), None
+        except FuturesTimeoutError:
+            return None, f"操作超时（{timeout_sec}秒），请缩短论文后重试"
+        except Exception as e:
+            return None, str(e)[:300]
+
+
 def _heartbeat_progress(_update_progress, start_pct, end_pct, duration_sec, stage_text):
     """Spawn a daemon thread that slowly increments progress from start_pct
     to end_pct over duration_sec, so the user sees continuous movement
@@ -212,6 +229,49 @@ def _get_language_config(contest_type):
             "system_prompt_template": None,
             "paper_title_placeholder": "MCM/ICM Competition Paper",
         }
+
+
+def _detect_language(text):
+    """Detect whether text is English or Chinese dominant."""
+    import re
+    if not text:
+        return "en"
+    chinese_chars = len(re.findall(r'[一-鿿]', text))
+    total_chars = len(re.sub(r'\s', '', text))
+    if total_chars == 0:
+        return "en"
+    ratio = chinese_chars / total_chars
+    if ratio > 0.3:
+        return "zh"
+    return "en"
+
+
+def _get_bilingual_instruction(text):
+    """Return bilingual output instruction based on content language.
+
+    For English papers, forces structured bilingual output with clear block markers
+    so the frontend can reliably parse and extract each language version.
+    """
+    lang = _detect_language(text)
+    if lang == "en":
+        return (
+            "## BILINGUAL OUTPUT REQUIREMENT (MANDATORY)\n\n"
+            "You MUST output your ENTIRE response in BOTH English AND Chinese. "
+            "Use the following structured block format for EVERY section:\n\n"
+            "```\n"
+            "=== ENGLISH ===\n"
+            "[Your complete English analysis/report/suggestion here]\n\n"
+            "=== 中文对照 ===\n"
+            "[完整的对应中文翻译]\n"
+            "```\n\n"
+            "CRITICAL RULES:\n"
+            "- NEVER skip the Chinese translation — every paragraph must have both languages.\n"
+            "- Do NOT mix languages within a single block.\n"
+            "- When providing replacement text, corrected formulas, or code to apply to the paper, "
+            "wrap ONLY the English version in <apply>...</apply> tags.\n"
+            "- The <apply> tag content will be used directly — ensure it matches the paper's language."
+        )
+    return ""
 
 
 def _strip_code_fences(text):
@@ -309,10 +369,22 @@ Segments to rewrite:
 
 {chr(10).join(prompt_parts)}"""
 
-            result = generate_response(
-                "You are an academic writing expert. Rewrite text to reduce plagiarism risk while preserving meaning. Always preserve ⟨⟨PROTECTED_N⟩⟩ markers verbatim.",
-                user_prompt, max_tokens=4000, api_key=_get_api_key()
+            # Heartbeat while waiting for the LLM batch response (up to 90s)
+            hb = _heartbeat_progress(
+                _update_progress,
+                progress,
+                min(progress + int(90 / total_batches), 95),
+                90,
+                f'正在改写第 {batch_idx + 1}/{total_batches} 批…'
             )
+            try:
+                result = generate_response(
+                    "You are an academic writing expert. Rewrite text to reduce plagiarism risk while preserving meaning. Always preserve ⟨⟨PROTECTED_N⟩⟩ markers verbatim.",
+                    user_prompt, max_tokens=4000, api_key=_get_api_key()
+                )
+            finally:
+                if hb:
+                    hb.set()
 
             seg_pattern = _re4.compile(r'<segment\s+id\s*=\s*(\d+)\s*>(.*?)</segment\s*>', _re4.DOTALL)
             for m in seg_pattern.finditer(result):
@@ -342,9 +414,12 @@ def create_plagiarism_task():
         return jsonify({"error": "论文内容过短，至少需要 200 字"}), 400
 
     analysis_text = content[:5000]
+    bilingual = _get_bilingual_instruction(content)
     user_prompt = f"""Please analyze the following mathematical modeling paper for originality and plagiarism risks.
 
 {analysis_text}
+
+{bilingual}
 
 Provide a section-by-section originality assessment with specific flagged passages and rewrite suggestions."""
 
@@ -1003,9 +1078,12 @@ def verify_math_stream():
     if not formula_blocks:
         return jsonify({"error": "未在论文中找到数学公式"}), 400
     math_text = '\n\n'.join(formula_blocks[:3])[:4000]
+    bilingual = _get_bilingual_instruction(content)
     user_prompt = f"""Please verify the mathematical correctness of the following paper section.
 
 For each formula or derivation, independently re-derive it and check for errors.
+
+{bilingual}
 
 ## Paper Section
 
@@ -1075,9 +1153,12 @@ def check_plagiarism_stream():
         return jsonify({"error": "论文内容过短，至少需要 200 字"}), 400
 
     analysis_text = content[:5000]
+    bilingual = _get_bilingual_instruction(content)
     user_prompt = f"""Please analyze the following mathematical modeling paper for originality and plagiarism risks.
 
 {analysis_text}
+
+{bilingual}
 
 Provide a section-by-section originality assessment with specific flagged passages and rewrite suggestions."""
 
@@ -1156,6 +1237,8 @@ Return the complete rewritten paper."""
 
 Target language: {lang}
 
+{_get_bilingual_instruction(passages)}
+
 Original paper:
 {passages[:5000]}
 
@@ -1183,9 +1266,12 @@ def deduplicate_stream():
     if mode == "targeted":
         if not full_content or not passages:
             return jsonify({"error": "请提供完整论文内容和需要降重的段落"}), 400
+        bilingual = _get_bilingual_instruction(full_content)
         user_prompt = f"""I have a mathematical modeling paper that needs targeted plagiarism reduction.
 
 Target language: {lang}
+
+{bilingual}
 
 === FULL PAPER (KEEP INTACT except for flagged sections below) ===
 {full_content[:6000]}
@@ -1207,6 +1293,8 @@ Return the complete rewritten paper."""
         user_prompt = f"""Please rewrite the following mathematical modeling paper to reduce plagiarism risk.
 
 Target language: {lang}
+
+{_get_bilingual_instruction(passages)}
 
 Original paper:
 {passages[:5000]}
@@ -1478,6 +1566,59 @@ def ground_citations():
         return jsonify({"error": f"引用验证失败: {str(e)[:200]}"}), 500
 
 
+@app.route("/api/tasks/ground-citations", methods=["POST"])
+@limiter.limit("5 per minute")
+def create_ground_citations_task():
+    """Task-based citation grounding — runs in background, survives page close."""
+    data = request.get_json()
+    content = data.get("content", "").strip()
+
+    if not content:
+        return jsonify({"error": "请提供论文内容"}), 400
+
+    def _run_grounding(content, _task_id=None, _update_progress=None):
+        if _update_progress:
+            _update_progress(5, '正在提取参考文献...')
+        agent = CitationGroundingAgent()
+        refs = agent.extract_references(content)
+        if not refs:
+            return {
+                "content": content, "summary": "未在论文中找到参考文献。",
+                "corrections": [], "total_refs": 0,
+            }
+
+        if _update_progress:
+            _update_progress(20, f'提取到 {len(refs)} 条引用，启动 AI 验证...')
+
+        user_prompt = agent.build_verification_prompt()
+
+        hb = _heartbeat_progress(_update_progress, 25, 85, 240,
+                                   f'AI 自主检索验证 {len(refs)} 条引用中...')
+        response_text = run_tool_loop(
+            SYSTEM_CITATION_AGENT, user_prompt,
+            [SEARCH_ACADEMIC_PAPER_TOOL], CITATION_TOOL_EXECUTORS,
+            max_turns=3, api_key=_get_api_key(),
+        )
+        if hb:
+            hb.set()
+
+        if _update_progress:
+            _update_progress(88, '正在对比差异，生成修正方案...')
+
+        agent.verification_results = agent.parse_verification_response(response_text)
+        corrected_paper, corrections_log = agent.apply_corrections(content)
+        summary = agent.generate_correction_summary(corrections_log)
+
+        if _update_progress:
+            _update_progress(100, '引用验证完成')
+        return {
+            "content": corrected_paper, "summary": summary,
+            "corrections": corrections_log, "total_refs": len(refs),
+        }
+
+    task_id = task_manager.create('ground-citations', _run_grounding, content)
+    return jsonify({"task_id": task_id})
+
 # ===== Unified RAG Originality Check (Task-based, AST-Safe) =====
 
 @app.route("/api/tasks/rag-check", methods=["POST"])
@@ -1500,80 +1641,98 @@ def create_rag_check_task():
     def _run_rag_check(content, contest_type, _task_id=None, _update_progress=None):
         results = {}
 
-        # Phase 1: Plagiarism check (5% → 30% via heartbeat)
+        # Phase 1: Plagiarism check (5% → 35%)
         if _update_progress:
             _update_progress(5, 'Phase 1/3: 正在启动原创性分析...')
         analysis_text = content[:5000]
+        bilingual = _get_bilingual_instruction(content)
         plag_prompt = f"""Please analyze the following mathematical modeling paper for originality and plagiarism risks.
 
 {analysis_text}
 
-Provide a section-by-section originality assessment with specific flagged passages and rewrite suggestions."""
-        # Start heartbeat: 5% → 28% over ~25s while LLM runs
-        hb1 = _heartbeat_progress(_update_progress, 5, 28, 25,
-                                   'Phase 1/3: AI 正在逐段分析论文原创性...')
-        plag_result = generate_response(SYSTEM_PLAGIARISM, plag_prompt, max_tokens=2000, api_key=_get_api_key())
-        if hb1:
-            hb1.set()
-        if _update_progress:
-            _update_progress(30, 'Phase 1/3: 原创性分析完成')
-        results['plagiarism'] = plag_result
+{bilingual}
 
-        # Phase 2: Citation grounding (30% → 85%)
+Provide a section-by-section originality assessment with specific flagged passages and rewrite suggestions."""
+        hb1 = _heartbeat_progress(_update_progress, 5, 33, 90,
+                                   'Phase 1/3: AI 正在逐段分析论文原创性...')
+        try:
+            plag_result, plag_error = _run_with_timeout(
+                generate_response, 180,
+                SYSTEM_PLAGIARISM, plag_prompt,
+                max_tokens=2000, api_key=_get_api_key(),
+            )
+        finally:
+            if hb1:
+                hb1.set()
+        if plag_error:
+            results['plagiarism'] = f'原创性分析超时或失败: {plag_error}'
+            if _update_progress:
+                _update_progress(35, 'Phase 1/3: 原创性分析超时，跳过')
+        else:
+            results['plagiarism'] = plag_result
+            if _update_progress:
+                _update_progress(35, 'Phase 1/3: 原创性分析完成')
+
+        # Phase 2: Citation grounding (35% → 88%)
         if _update_progress:
-            _update_progress(32, 'Phase 2/3: 正在提取参考文献...')
+            _update_progress(38, 'Phase 2/3: 正在提取参考文献...')
         try:
             agent = CitationGroundingAgent()
             refs = agent.extract_references(content)
             if refs:
                 if _update_progress:
-                    _update_progress(40, f'Phase 2/3: 提取到 {len(refs)} 条引用，准备验证...')
+                    _update_progress(42, f'Phase 2/3: 提取到 {len(refs)} 条引用，准备验证...')
                 user_prompt = agent.build_verification_prompt()
 
-                def _run_tool_loop(system_prompt, user_prompt, tools, tool_executors):
-                    return run_tool_loop(
-                        system_prompt=system_prompt, user_prompt=user_prompt,
-                        tools=tools, tool_executors=tool_executors,
+                if _update_progress:
+                    _update_progress(44, f'Phase 2/3: 正在 Crossref + Semantic Scholar 验证 {len(refs)} 条引用...')
+                hb2 = _heartbeat_progress(_update_progress, 44, 82, 240,
+                                           f'Phase 2/3: AI 自主检索验证 {len(refs)} 条引用中...')
+                try:
+                    response_text, tool_error = _run_with_timeout(
+                        run_tool_loop, 420,
+                        SYSTEM_CITATION_AGENT, user_prompt,
+                        [SEARCH_ACADEMIC_PAPER_TOOL], CITATION_TOOL_EXECUTORS,
                         max_turns=3, api_key=_get_api_key(),
                     )
+                finally:
+                    if hb2:
+                        hb2.set()
 
-                # Start heartbeat: 40% → 78% over ~55s while tool loop runs
-                if _update_progress:
-                    _update_progress(42, f'Phase 2/3: 正在 Crossref + Semantic Scholar 验证 {len(refs)} 条引用...')
-                hb2 = _heartbeat_progress(_update_progress, 42, 78, 55,
-                                           f'Phase 2/3: AI 自主检索验证 {len(refs)} 条引用中...')
-                response_text = _run_tool_loop(
-                    SYSTEM_CITATION_AGENT, user_prompt,
-                    [SEARCH_ACADEMIC_PAPER_TOOL], CITATION_TOOL_EXECUTORS,
-                )
-                if hb2:
-                    hb2.set()
-                agent.verification_results = agent.parse_verification_response(response_text)
-
-                # AST-safe correction: only modify reference section text
-                if _update_progress:
-                    _update_progress(82, 'Phase 3/3: 正在对比差异，生成 AST 安全替换...')
-                corrected_paper, corrections_log = _apply_corrections_ast_safe(content, agent)
-                summary = agent.generate_correction_summary(corrections_log)
-                results['grounded_content'] = corrected_paper
-                results['corrections'] = corrections_log
-                results['summary'] = summary
-                results['total_refs'] = len(refs)
-                if _update_progress:
-                    _update_progress(95, 'Phase 3/3: 修正方案生成完毕')
+                if tool_error:
+                    results['grounded_content'] = content
+                    results['corrections'] = []
+                    results['summary'] = f'引用验证超时: {tool_error}'
+                    results['total_refs'] = len(refs)
+                    if _update_progress:
+                        _update_progress(88, f'Phase 2/3: 引用验证超时，跳过')
+                else:
+                    agent.verification_results = agent.parse_verification_response(response_text)
+                    if _update_progress:
+                        _update_progress(85, 'Phase 3/3: 正在对比差异，生成 AST 安全替换...')
+                    corrected_paper, corrections_log = _apply_corrections_ast_safe(content, agent)
+                    summary = agent.generate_correction_summary(corrections_log)
+                    results['grounded_content'] = corrected_paper
+                    results['corrections'] = corrections_log
+                    results['summary'] = summary
+                    results['total_refs'] = len(refs)
+                    if _update_progress:
+                        _update_progress(95, 'Phase 3/3: 修正方案生成完毕')
             else:
                 results['grounded_content'] = content
                 results['corrections'] = []
                 results['summary'] = '未在论文中找到参考文献。'
                 results['total_refs'] = 0
                 if _update_progress:
-                    _update_progress(90, '未找到参考文献，跳过验证阶段')
+                    _update_progress(92, '未找到参考文献，跳过验证阶段')
         except Exception as e:
             logger.error("citation grounding in rag-check failed: %s", e, exc_info=True)
             results['grounded_content'] = content
             results['corrections'] = []
             results['summary'] = f'引用验证失败: {str(e)[:200]}'
             results['total_refs'] = 0
+            if _update_progress:
+                _update_progress(88, f'引用验证出错: {str(e)[:100]}')
 
         if _update_progress:
             _update_progress(100, 'RAG 原创性检验完成')
@@ -1647,7 +1806,7 @@ def refine_abstract():
     if contest_type == "CUMCM":
         language_instruction = "使用中文进行检查和建议。"
     else:
-        language_instruction = "Provide all feedback in English."
+        language_instruction = "Provide all feedback in English. " + _get_bilingual_instruction(abstract)
 
     user_prompt = ABSTRACT_REFINE_PROMPT.format(
         abstract=abstract,
@@ -1674,7 +1833,7 @@ def refine_abstract_stream():
     if contest_type == "CUMCM":
         language_instruction = "使用中文进行检查和建议。"
     else:
-        language_instruction = "Provide all feedback in English."
+        language_instruction = "Provide all feedback in English. " + _get_bilingual_instruction(abstract)
     user_prompt = ABSTRACT_REFINE_PROMPT.format(
         abstract=abstract, contest_type=contest_type, language_instruction=language_instruction
     )
@@ -1716,7 +1875,7 @@ def generate_sensitivity():
     if contest_type == "CUMCM":
         language_instruction = "使用中文注释。"
     else:
-        language_instruction = "Use English comments."
+        language_instruction = "Use English comments. " + _get_bilingual_instruction(model_description)
 
     user_prompt = SENSITIVITY_PROMPT.format(
         problem=problem,
@@ -1748,7 +1907,7 @@ def score_paper():
     if contest_type == "CUMCM":
         language_instruction = "使用中文进行评估。"
     else:
-        language_instruction = "Provide all feedback in English."
+        language_instruction = "Provide all feedback in English. " + _get_bilingual_instruction(content)
 
     user_prompt = PAPER_SCORING_PROMPT.format(
         content=content[:8000],
@@ -1780,7 +1939,7 @@ def recommend_models():
     if contest_type == "CUMCM":
         language_instruction = "使用中文回答。"
     else:
-        language_instruction = "Answer in English."
+        language_instruction = "Answer in English. " + _get_bilingual_instruction(problem)
 
     user_prompt = MODEL_RECOMMEND_PROMPT.format(
         problem=problem,
@@ -1812,7 +1971,7 @@ def suggest_figures():
     if contest_type == "CUMCM":
         language_instruction = "使用中文注释。"
     else:
-        language_instruction = "Use English comments."
+        language_instruction = "Use English comments. " + _get_bilingual_instruction(content)
 
     user_prompt = FIGURE_SUGGEST_PROMPT.format(
         content=content[:6000],
@@ -1841,10 +2000,12 @@ def compare_papers():
     if not content_a or not content_b:
         return jsonify({"error": "请提供两版论文内容"}), 400
 
+    bilingual = _get_bilingual_instruction(content_a)
     user_prompt = PAPER_COMPARE_PROMPT.format(
         content_a=content_a[:4000],
         content_b=content_b[:4000],
         contest_type=contest_type,
+        bilingual_instruction=bilingual,
     )
 
     try:
@@ -1886,7 +2047,8 @@ def mock_review():
     if not content:
         return jsonify({"error": "请提供论文内容"}), 400
 
-    user_prompt = MOCK_REVIEW_PROMPT.format(content=content[:15000])
+    bilingual = _get_bilingual_instruction(content)
+    user_prompt = MOCK_REVIEW_PROMPT.format(content=content[:15000], bilingual_instruction=bilingual)
     try:
         result = generate_response(SYSTEM_MOCK_REVIEW, user_prompt, max_tokens=3000, api_key=_get_api_key())
         return jsonify({"content": result})

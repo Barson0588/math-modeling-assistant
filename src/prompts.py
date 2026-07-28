@@ -559,13 +559,34 @@ For each formula or derivation in the text:
 5. Check dimensional/unit consistency where applicable
 6. Assess whether assumptions are sufficient for the derivation claimed
 
+CRITICAL OUTPUT FORMAT — For EVERY error found, use this exact structure:
+
+[ERROR]
+**Location:** Section/paragraph description
+**Original Formula:**
+```
+<exact original LaTeX from the paper>
+```
+**Issue:** <brief explanation of what's wrong>
+[/ERROR]
+
+[FIX]
+**Corrected Formula:**
+```
+<complete corrected LaTeX formula>
+```
+**Explanation:** <why this fix is correct>
+[/FIX]
+
 Output a structured report:
 - **Overall Assessment**: PASS / NEEDS REVIEW / FAIL
-- **Issues Found**: List each issue with severity (Critical / Major / Minor), the specific formula/location, what's wrong, and the suggested correction
+- **Issues Found**: List each issue with severity (Critical / Major / Minor), then use [ERROR]/[FIX] pairs for each
 - **Notation Audit**: List any symbols used but not defined, or defined but never used
 - **Assumption Gap Analysis**: Are there any implicit assumptions that should be made explicit?
 
-Be specific and precise. Quote the exact text/formula you're checking. If everything is correct, say so clearly — don't invent issues."""
+Be specific and precise. Quote the exact text/formula you're checking.
+If everything is correct, say so clearly — don't invent issues.
+For every error, provide the COMPLETE corrected formula block, ready to copy-paste."""
 
 
 # ============================================================
@@ -696,6 +717,8 @@ The scoring breakdown is:
 - **Expression (30%)**: Writing clarity, structure, figure quality, abstract strength
 - **Model (30%)**: Mathematical rigor, assumption justification, sensitivity analysis depth
 
+CRITICAL: Your VERY FIRST step is to locate and extract the paper's Abstract. You MUST quote the abstract's opening sentences and score it specifically before moving to other sections. A paper without a proper abstract cannot score above 80 in Expression.
+
 For each section of the paper, provide:
 1. A score (0-100) for each of the three criteria
 2. Specific strengths (what works well)
@@ -711,6 +734,14 @@ Be specific, critical, and constructive. Use Markdown formatting with tables for
 
 PAPER_SCORING_PROMPT = """Please score the following mathematical modeling paper against the COMAP judging rubric.
 
+## CRITICAL: Start by extracting and analyzing the Abstract
+Before scoring any other section, you MUST:
+1. Extract the paper's abstract (located under `## Abstract` or `### Abstract`)
+2. Quote the first 1-2 sentences of the abstract verbatim
+3. Evaluate it against COMAP criteria: clarity, quantified results, standalone readability, length (200-250 words)
+
+If the abstract is missing or cannot be found in the content, state this as a CRITICAL finding and deduct heavily from Expression score.
+
 ## Paper Content
 {content}
 
@@ -719,7 +750,7 @@ PAPER_SCORING_PROMPT = """Please score the following mathematical modeling paper
 
 {language_instruction}
 
-Provide a complete scoring report with section-by-section analysis, overall score, and top 3 priority fixes."""
+Provide a complete scoring report with section-by-section analysis starting with the Abstract, overall score, and top 3 priority fixes."""
 
 
 # ============================================================
@@ -825,7 +856,9 @@ PAPER_COMPARE_PROMPT = """Compare the following two versions of a mathematical m
 ## Contest Type
 {contest_type}
 
-Provide a structured side-by-side comparison with scores, section analysis, and actionable recommendations."""
+Provide a structured side-by-side comparison with scores, section analysis, and actionable recommendations.
+
+{bilingual_instruction}"""
 
 
 # ============================================================
@@ -986,6 +1019,8 @@ and actionable takeaways.
 SYSTEM_MOCK_REVIEW = """You are a formal COMAP MCM/ICM competition judge. You are reviewing a paper
 using the official COMAP judging rubric. Be thorough, fair, and constructive.
 
+CRITICAL FIRST STEP: You MUST locate and extract the paper's Abstract before reviewing any other section. Quote the abstract's opening lines in your review. If the abstract is missing, flag it as a FATAL disqualifying flaw.
+
 Review the paper against COMAP's official criteria:
 
 **Innovation (40% of total score):**
@@ -1008,15 +1043,24 @@ Review the paper against COMAP's official criteria:
 
 Format your review as a formal scorecard:
 
-1. **Overall Score**: X/100 (Innovation: X/40 + Expression: X/30 + Model: X/30)
-2. **Section-by-Section Assessment** — each section scored and critiqued
-3. **Strengths** — 3 specific things done well
-4. **Weaknesses** — 3 specific areas to improve
-5. **Priority Fixes** — the 3 changes that would most improve the score
+1. **Abstract Assessment** — quote the abstract, score its quality, note any issues
+2. **Overall Score**: X/100 (Innovation: X/40 + Expression: X/30 + Model: X/30)
+3. **Section-by-Section Assessment** — each section scored and critiqued
+4. **Strengths** — 3 specific things done well
+5. **Weaknesses** — 3 specific areas to improve
+6. **Priority Fixes** — the 3 changes that would most improve the score
 
 Be specific — reference actual content from the paper. Use Chinese if the paper is in Chinese."""
 
 MOCK_REVIEW_PROMPT = """Please review the following mathematical modeling competition paper as a formal COMAP judge.
+
+## CRITICAL: Start by extracting and analyzing the Abstract
+Before reviewing any other section, you MUST:
+1. Locate and extract the paper's abstract (under `## Abstract` or `### Abstract`)
+2. Quote the first 1-2 sentences verbatim in your review
+3. Score it against COMAP abstract criteria: quantified results present, 200-250 words, standalone readability, no formulas
+
+If the abstract is missing from the paper, flag this as a FATAL flaw — papers without abstracts are automatically disqualified from top-tier awards.
 
 ## Paper Content
 
@@ -1025,7 +1069,9 @@ MOCK_REVIEW_PROMPT = """Please review the following mathematical modeling compet
 ## Contest Type
 MCM/ICM
 
-Provide a structured review with overall score, section-by-section assessment, strengths, weaknesses, and priority fixes."""
+Provide a structured review with overall score, section-by-section assessment (start with Abstract), strengths, weaknesses, and priority fixes.
+
+{bilingual_instruction}"""
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1169,31 +1215,66 @@ REQUIRED SECTIONS (every one must be COMPLETE prose):
 Language: {language_instruction}
 Contest: {contest_type}"""
 
-USER_PAPER_FINAL = """Write the COMPLETE mathematical modeling competition paper.
+USER_PAPER_FINAL = """## CRITICAL — READ FIRST
+
+You are writing a COMPLETE mathematical modeling competition paper. Your output MUST begin with the Abstract and end with References. Every section below is MANDATORY — skipping any section is a FAILURE.
+
+The FIRST line after your response MUST be `## Abstract`. If your response does not start with `## Abstract`, you have FAILED.
+
+## MANDATORY SECTION ORDER (output every heading exactly as shown)
+
+### Abstract
+(MUST be 200-250 words. NO formulas. NO citations. Include quantified key results. Standalone — a judge should understand the entire paper from the abstract alone.)
+
+**Keywords:** [list 4-6 keywords separated by semicolons]
+
+### 1. Introduction
+#### 1.1 Background
+#### 1.2 Problem Restatement
+#### 1.3 Our Approach
+
+### 2. Assumptions and Justifications
+(5-7 assumptions. Each assumption: bold statement + full justification paragraph explaining WHY this simplification is valid.)
+
+### 3. Notation
+(Table: Symbol | Meaning | Unit. Every symbol used in the model must be defined here.)
+
+### 4. Model Development
+### 5. Model Solution
+### 6. Results and Analysis
+(For sections 4-6: use the pre-written math derivation provided below. Include it VERBATIM — do NOT rewrite equations. Add surrounding prose if needed for flow but keep all math intact.)
+
+### 7. Sensitivity Analysis
+(Test key parameters at ±10%, ±15%, ±20%. Show results in a table. Include multi-factor analysis if applicable. Discuss robustness.)
+
+### 8. Model Evaluation
+#### 8.1 Strengths
+#### 8.2 Weaknesses
+#### 8.3 Future Improvements
+
+### 9. Conclusion
+(2-3 paragraphs summarizing problem, method, key quantitative results, and implications. NO new claims.)
+
+### 10. References
+(ONLY use references from the verified list below. Format: [1] Author. (Year). Title. Journal/Publisher. DOI if available.)
+
+---
 
 ## Contest: {contest_type} — {problem_type} ({problem_category})
 
-## Problem
+## Problem Statement
 {problem}
 
-## Requirements
+## Additional Requirements
 {requirements}
 
 {language_block}
 
-## Math Derivation (Sections 4-6) — INCLUDE VERBATIM
+## Pre-written Math Derivation (Sections 4-6) — Include Verbatim
 {math_sections}
 
-## VERIFIED REFERENCES — Use ONLY these in your References section
+## Verified Reference List — Use ONLY These
 {verified_references}
-
-## Your Task
-1. Write Sections 1-3 (Abstract, Introduction, Assumptions)
-2. Include Sections 4-6 exactly as provided above (do not modify equations)
-3. Write Sections 7-9 (Sensitivity, Evaluation, Conclusion)
-4. Write Section 10 (References) using ONLY the verified references listed above
-5. Use <analysis> tags before each major section to verify correctness
-6. Output the COMPLETE paper in Markdown format: # {paper_title_or_placeholder}
 
 Date: {date}"""
 

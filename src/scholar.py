@@ -13,7 +13,7 @@ BASE_URL = "https://api.semanticscholar.org/graph/v1"
 FIELDS = "title,authors,year,citationCount,externalIds,url,abstract"
 
 
-def _fetch_json(url, retries=1, timeout=8):
+def _fetch_json(url, retries=1, timeout=15):
     """Fetch JSON from URL with retry for 429 rate limits."""
     for attempt in range(retries + 1):
         req = urllib.request.Request(url)

@@ -93,7 +93,11 @@ def run_pipeline(
     )
 
     blueprint_raw = generate_response(
-        SYSTEM_BLUEPRINT, blueprint_user,
+        SYSTEM_BLUEPRINT.format(
+            language_instruction=language_instruction,
+            contest_type=contest_type,
+        ),
+        blueprint_user,
         max_tokens=1500, api_key=api_key,
     )
 
@@ -116,7 +120,11 @@ def run_pipeline(
 
     math_sections = ""
     for chunk in generate_stream(
-        SYSTEM_MATH_CORE, math_user,
+        SYSTEM_MATH_CORE.format(
+            language_instruction=language_instruction,
+            contest_type=contest_type,
+        ),
+        math_user,
         max_tokens=6000, api_key=api_key,
     ):
         math_sections += chunk
@@ -132,6 +140,8 @@ def run_pipeline(
     yield _yield_content("---\n\n")
 
     # ── Step 3: Final Assembly ────────────────────────────────────────
+    # Reset frontend content buffer so the final paper replaces Step 1 preview
+    yield "data: [CONTENT_RESET]\n\n"
     yield _yield_stage("撰写摘要与引言...")
     yield _yield_stage("撰写假设与论证...")
     yield _yield_stage("整合完整论文...")
@@ -149,10 +159,15 @@ def run_pipeline(
         date=today_str,
     )
 
+    system_final = SYSTEM_PAPER_FINAL.format(
+        language_instruction=language_instruction,
+        contest_type=contest_type,
+    )
+
     full_paper = ""
     for chunk in generate_stream(
-        SYSTEM_PAPER_FINAL, paper_user,
-        max_tokens=8000, api_key=api_key,
+        system_final, paper_user,
+        max_tokens=12000, api_key=api_key,
     ):
         full_paper += chunk
         yield _yield_content(chunk)
