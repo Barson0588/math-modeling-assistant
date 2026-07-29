@@ -1,7 +1,25 @@
-<p align="center">
-  <img src="screenshot.png" alt="MMA 截图" width="85%">
-  <br><em>Generator 页 — 选择竞赛类型，输入题目，一键生成完整论文方案</em>
-</p>
+<table align="center">
+<tr>
+  <td width="50%">
+    <img src="screenshot-generator.png" alt="Generator" width="100%">
+    <br><em>Generator — 输入题目，一键生成论文方案</em>
+  </td>
+  <td width="50%">
+    <img src="screenshot-models.png" alt="Models" width="100%">
+    <br><em>Models — 33个数学模型速查，按类别/题型/难度筛选</em>
+  </td>
+</tr>
+<tr>
+  <td width="50%">
+    <img src="screenshot-problems.png" alt="Problems" width="100%">
+    <br><em>Problems — 2000-2024 美赛MCM/ICM + 国赛CUMCM 真题库</em>
+  </td>
+  <td width="50%">
+    <img src="screenshot-paper.png" alt="Paper" width="100%">
+    <br><em>Paper — A4排版预览 + AI查重 + 引用验证</em>
+  </td>
+</tr>
+</table>
 
 <h1 align="center">Math Modeling Assistant (MMA)</h1>
 
@@ -102,7 +120,7 @@ math-modeling-assistant/
 ├── launcher_win.pyw    # Windows 无控制台启动
 ├── Procfile            # Railway 部署配置
 ├── src/                # 核心逻辑
-├── static/             # 前端 CSS/JS
+├── static/             # 前端 CSS/JS + PWA icons + manifest
 ├── templates/          # Jinja2 页面模板
 └── docs/               # 文档
 ```
