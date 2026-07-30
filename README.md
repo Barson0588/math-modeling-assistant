@@ -1,21 +1,21 @@
 <table align="center">
 <tr>
   <td width="50%">
-    <img src="screenshot-generator.png" alt="Generator" width="100%">
+    <img src="screenshots/01-generator.png" alt="Generator" width="100%">
     <br><em>Generator — 输入题目，一键生成论文方案</em>
   </td>
   <td width="50%">
-    <img src="screenshot-models.png" alt="Models" width="100%">
+    <img src="screenshots/03-models.png" alt="Models" width="100%">
     <br><em>Models — 33个数学模型速查，按类别/题型/难度筛选</em>
   </td>
 </tr>
 <tr>
   <td width="50%">
-    <img src="screenshot-problems.png" alt="Problems" width="100%">
+    <img src="screenshots/04-problems.png" alt="Problems" width="100%">
     <br><em>Problems — 2000-2024 美赛MCM/ICM + 国赛CUMCM 真题库</em>
   </td>
   <td width="50%">
-    <img src="screenshot-paper.png" alt="Paper" width="100%">
+    <img src="screenshots/02-paper.png" alt="Paper" width="100%">
     <br><em>Paper — A4排版预览 + AI查重 + 引用验证</em>
   </td>
 </tr>
@@ -23,6 +23,7 @@
 
 <h1 align="center">Math Modeling Assistant (MMA)</h1>
 
+<p align="center">
 <p align="center">
   <b>输入题目 → 论文框架 + 建模思路 + Python 代码 + LaTeX 模板</b>
   <br><br>
@@ -37,6 +38,7 @@
   <img src="https://img.shields.io/badge/PWA-ready-orange?logo=pwa" alt="PWA">
   <img src="https://img.shields.io/badge/MCM_ICM-supported-red" alt="MCM/ICM">
   <img src="https://img.shields.io/badge/CUMCM-supported-red" alt="CUMCM">
+</p>
 </p>
 
 ---
@@ -168,6 +170,23 @@ API Key 只存在你浏览器 localStorage 里，发给 DeepSeek 的请求直接
 - [ ] 英文论文生成优化
 
 有人帮忙的话进度会快很多，直接提 PR。
+
+## 截图展示
+
+<table>
+<tr>
+  <td width="50%"><img src="screenshots/01-generator.png" alt="Generator"><br><em>Generator — 选题 + 输入题目，一键生成论文方案</em></td>
+  <td width="50%"><img src="screenshots/02-paper.png" alt="Paper"><br><em>Paper — 完整学术论文，A4 排版预览 + AI 查重</em></td>
+</tr>
+<tr>
+  <td><img src="screenshots/03-models.png" alt="Models"><br><em>Models — 33 个数学模型速查，按类别/难度筛选</em></td>
+  <td><img src="screenshots/04-problems.png" alt="Problems"><br><em>Problems — 2000-2024 美赛 & 国赛真题库</em></td>
+</tr>
+<tr>
+  <td><img src="screenshots/05-guide.png" alt="Guide"><br><em>Guide — 4 天竞赛时间线 + 工具链推荐</em></td>
+  <td><img src="screenshots/06-roles.png" alt="Roles"><br><em>Roles — 建模/编程/写作手分工 + 每日任务</em></td>
+</tr>
+</table>
 
 ## License
 
