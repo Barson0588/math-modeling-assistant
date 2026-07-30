@@ -1,7 +1,7 @@
 import json
 import logging
 import os
-from flask import Flask, render_template, request, jsonify, Response, stream_with_context
+from flask import Flask, render_template, request, jsonify, Response, stream_with_context, g
 from src.prompts import (
     ROLES_INFO, SYSTEM_MCM_EN, SYSTEM_MCM_CN, SYSTEM_AI_REPORT,
     PAPER_PROMPT, AI_REPORT_PROMPT, LATEX_TEMPLATE,
