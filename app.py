@@ -71,6 +71,15 @@ app.register_blueprint(context_hint_bp)
 init_db()
 
 
+# ── Background Task Manager ──────────────────────────────────────────────
+# Heavy operations (AST dedup, plagiarism check) run as background tasks
+# so they survive page closes and report progress in real-time.
+
+import uuid
+import threading
+import time as _time
+
+
 # ── Request ID Middleware ────────────────────────────────────────────────
 
 @app.before_request
@@ -83,14 +92,6 @@ def _add_request_id_header(response):
     response.headers['X-Request-ID'] = getattr(g, 'request_id', 'unknown')
     return response
 
-
-# ── Background Task Manager ──────────────────────────────────────────────
-# Heavy operations (AST dedup, plagiarism check) run as background tasks
-# so they survive page closes and report progress in real-time.
-
-import uuid
-import threading
-import time as _time
 
 class TaskManager:
     def __init__(self):
