@@ -43,7 +43,9 @@ app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024  # 5MB 请求体限制
 
 from flask_cors import CORS
-CORS(app, supports_credentials=True, origins=["https://math-modeling-assistant.up.railway.app"])
+CORS(app, supports_credentials=True, origins=os.environ.get(
+    "CORS_ORIGINS", "https://math-modeling-assistant.up.railway.app"
+).split(","))
 
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
@@ -67,6 +69,19 @@ app.register_blueprint(context_hint_bp)
 
 # Initialize database on startup
 init_db()
+
+
+# ── Request ID Middleware ────────────────────────────────────────────────
+
+@app.before_request
+def _assign_request_id():
+    g.request_id = uuid.uuid4().hex[:12]
+
+
+@app.after_request
+def _add_request_id_header(response):
+    response.headers['X-Request-ID'] = getattr(g, 'request_id', 'unknown')
+    return response
 
 
 # ── Background Task Manager ──────────────────────────────────────────────
@@ -122,6 +137,7 @@ class TaskManager:
         return update
 
     def get(self, task_id):
+        self.cleanup_old()
         with self._lock:
             t = self._tasks.get(task_id)
             if t is None:

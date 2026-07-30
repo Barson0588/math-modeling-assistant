@@ -26,9 +26,11 @@ if ENCRYPTION_KEY:
         digest = hashlib.sha256(ENCRYPTION_KEY.encode()).digest()
         _fernet = Fernet(base64.urlsafe_b64encode(digest))
 else:
-    # Dev fallback: derive key from a static seed (NOT for production!)
-    _fernet = Fernet(base64.urlsafe_b64encode(hashlib.sha256(b'mma-dev-key').digest()))
-    print("[AUTH] WARNING: Using dev encryption key. Set ENCRYPTION_KEY env var for production.")
+    raise RuntimeError(
+        "ENCRYPTION_KEY environment variable is required.\n"
+        "Generate one with: python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\"\n"
+        "Add to your .env file or Railway environment variables."
+    )
 
 
 def encrypt_api_key(plain_key: str) -> str:
@@ -82,6 +84,15 @@ def login_required(f):
     return decorated
 
 
+def _is_https():
+    """Detect if the current request is over HTTPS via proxy headers or Flask context."""
+    if os.environ.get('FORCE_HTTPS'):
+        return True
+    if request.headers.get('X-Forwarded-Proto', '').lower() == 'https':
+        return True
+    return request.is_secure
+
+
 @auth_bp.route('/api/auth/register', methods=['POST'])
 def register():
     data = request.get_json() or {}
@@ -120,7 +131,7 @@ def register():
 
     resp = jsonify({'status': 'ok', 'email': email})
     resp.set_cookie('mma_session', token, max_age=86400 * 7, httponly=True,
-                    secure=False, samesite='Lax')
+                    secure=_is_https(), samesite='Lax')
     return resp
 
 
@@ -146,7 +157,7 @@ def login():
 
     resp = jsonify({'status': 'ok', 'email': email})
     resp.set_cookie('mma_session', token, max_age=86400 * 7, httponly=True,
-                    secure=False, samesite='Lax')
+                    secure=_is_https(), samesite='Lax')
     return resp
 
 
